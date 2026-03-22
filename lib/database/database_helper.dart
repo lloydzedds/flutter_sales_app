@@ -1560,10 +1560,15 @@ class DatabaseHelper {
     final sourceFile = File(sourcePath);
     final destinationFile = File(destinationPath);
 
+    if (!await sourceFile.exists()) {
+      throw Exception("Selected backup file was not found");
+    }
+
     if (await destinationFile.exists()) {
       await destinationFile.delete();
     }
 
     await sourceFile.copy(destinationPath);
+    await database;
   }
 }

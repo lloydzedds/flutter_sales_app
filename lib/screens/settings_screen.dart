@@ -1,11 +1,11 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../app_settings_controller.dart';
 import '../database/database_helper.dart';
+import '../services/sales_export_service.dart';
 import 'how_to_use_screen.dart';
 import 'store_details_screen.dart';
 
@@ -42,6 +42,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<String?> _pickBackupAction() {
+    return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.share_outlined),
+                title: const Text("Share Backup"),
+                subtitle: const Text(
+                  "Open the Android share menu and send the backup to another app",
+                ),
+                onTap: () => Navigator.of(sheetContext).pop('share'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.download_outlined),
+                title: const Text("Save to Local"),
+                subtitle: const Text(
+                  "Save the backup in Android/media/<app>/sale",
+                ),
+                onTap: () => Navigator.of(sheetContext).pop('save'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _openStoreDetails() async {
     final updated = await Navigator.of(
       context,
@@ -54,24 +89,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _backupData() async {
+    final action = await _pickBackupAction();
+    if (action == null) return;
+
     setState(() {
       _isBusy = true;
     });
 
     try {
-      final directory = await getApplicationDocumentsDirectory();
+      final directory = action == 'save'
+          ? await SalesExportService.ensureLocalSaleDirectory()
+          : await SalesExportService.ensureShareDirectory();
       final fileName =
           "sales_backup_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.db";
       final backupPath = "${directory.path}/$fileName";
 
       final backupFile = await DatabaseHelper.instance.createBackup(backupPath);
 
-      await SharePlus.instance.share(
-        ShareParams(files: [XFile(backupFile.path)], text: "Sale Buddy backup"),
-      );
+      if (action == 'share') {
+        await SharePlus.instance.share(
+          ShareParams(
+            files: [XFile(backupFile.path)],
+            text: "Sale Buddy backup",
+          ),
+        );
+      }
 
       if (!mounted) return;
-      _showMessage("Backup created and ready to share");
+      _showMessage(
+        action == 'share'
+            ? "Share sheet opened for backup"
+            : "Backup saved to ${backupFile.parent.path}",
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -83,8 +132,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _restoreData() async {
     final result = await FilePicker.platform.pickFiles(
+      dialogTitle: "Select backup database",
       type: FileType.custom,
       allowedExtensions: ['db'],
+      allowMultiple: false,
     );
 
     if (result == null) return;
@@ -101,7 +152,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await _loadStoreDetails();
 
       if (!mounted) return;
-      _showMessage("Backup restored. Reopen screens to refresh loaded data.");
+      _showMessage("Backup restored successfully");
+    } catch (error) {
+      if (!mounted) return;
+      _showMessage(error.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) {
         setState(() {
