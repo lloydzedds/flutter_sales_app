@@ -19,8 +19,9 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _createDB,
+      onUpgrade: _upgradeDB,
     );
   }
 
@@ -43,9 +44,29 @@ class DatabaseHelper {
         discount REAL NOT NULL,
         total REAL NOT NULL,
         profit REAL NOT NULL,
-        date TEXT NOT NULL
+        date TEXT NOT NULL,
+        cost_price REAL,
+        selling_price REAL
       )
     ''');
+  }
+
+  Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      final columns = await db.rawQuery("PRAGMA table_info(sales)");
+      final columnNames = columns
+          .map((column) => column['name'] as String?)
+          .whereType<String>()
+          .toSet();
+
+      if (!columnNames.contains('cost_price')) {
+        await db.execute('ALTER TABLE sales ADD COLUMN cost_price REAL');
+      }
+
+      if (!columnNames.contains('selling_price')) {
+        await db.execute('ALTER TABLE sales ADD COLUMN selling_price REAL');
+      }
+    }
   }
 
   Future<int> insertProduct(Map<String, dynamic> row) async {
@@ -57,9 +78,10 @@ class DatabaseHelper {
     final db = await instance.database;
     return await db.query('products');
   }
+
   Future<int> insertSale(Map<String, dynamic> row) async {
-  final db = await instance.database;
-  return await db.insert('sales', row);
+    final db = await instance.database;
+    return await db.insert('sales', row);
   }
 
   Future<void> updateStock(int productId, int newStock) async {
@@ -110,18 +132,117 @@ class DatabaseHelper {
     return await db.rawQuery('''
       SELECT 
         sales.id,
+        sales.product_id,
         sales.units,
         sales.discount,
         sales.total,
-        sales.profit,
         sales.date,
-        products.name
+        COALESCE(products.name, 'Deleted Product') AS name,
+        COALESCE(sales.cost_price, products.cost_price) AS cost_price,
+        COALESCE(sales.selling_price, products.selling_price) AS selling_price,
+        CASE
+          WHEN COALESCE(sales.selling_price, products.selling_price) IS NOT NULL
+          THEN COALESCE(sales.selling_price, products.selling_price) - sales.discount
+          ELSE NULL
+        END AS sold_price,
+        CASE
+          WHEN COALESCE(sales.cost_price, products.cost_price) IS NOT NULL
+            AND COALESCE(sales.selling_price, products.selling_price) IS NOT NULL
+          THEN (
+            (COALESCE(sales.selling_price, products.selling_price) - sales.discount) -
+            COALESCE(sales.cost_price, products.cost_price)
+          ) * sales.units
+          ELSE sales.profit
+        END AS profit
       FROM sales
-      JOIN products
+      LEFT JOIN products
         ON sales.product_id = products.id
       ORDER BY sales.id DESC
     ''');
   }
+
+  Future<void> updateSale({
+    required int saleId,
+    required int productId,
+    required int units,
+    required double discount,
+    required double total,
+    required double profit,
+    required double costPrice,
+    required double sellingPrice,
+  }) async {
+    final db = await instance.database;
+
+    await db.transaction((txn) async {
+      final existingSale = await txn.query(
+        'sales',
+        where: 'id = ?',
+        whereArgs: [saleId],
+      );
+
+      if (existingSale.isEmpty) {
+        throw Exception('Sale not found');
+      }
+
+      final previousSale = existingSale.first;
+      final oldProductId = previousSale['product_id'] as int;
+      final oldUnits = previousSale['units'] as int;
+
+      final oldProduct = await txn.query(
+        'products',
+        where: 'id = ?',
+        whereArgs: [oldProductId],
+      );
+
+      if (oldProduct.isNotEmpty) {
+        final currentOldStock = oldProduct.first['stock'] as int;
+        await txn.update(
+          'products',
+          {'stock': currentOldStock + oldUnits},
+          where: 'id = ?',
+          whereArgs: [oldProductId],
+        );
+      }
+
+      final newProduct = await txn.query(
+        'products',
+        where: 'id = ?',
+        whereArgs: [productId],
+      );
+
+      if (newProduct.isEmpty) {
+        throw Exception('Selected product not found');
+      }
+
+      final availableStock = newProduct.first['stock'] as int;
+      if (units > availableStock) {
+        throw Exception('Not enough stock');
+      }
+
+      await txn.update(
+        'products',
+        {'stock': availableStock - units},
+        where: 'id = ?',
+        whereArgs: [productId],
+      );
+
+      await txn.update(
+        'sales',
+        {
+          'product_id': productId,
+          'units': units,
+          'discount': discount,
+          'total': total,
+          'profit': profit,
+          'cost_price': costPrice,
+          'selling_price': sellingPrice,
+        },
+        where: 'id = ?',
+        whereArgs: [saleId],
+      );
+    });
+  }
+
   Future<void> deleteSale(int saleId) async {
     final db = await instance.database;
 
@@ -174,10 +295,22 @@ class DatabaseHelper {
       SELECT 
         COUNT(*) as total_sales,
         SUM(total) as total_revenue,
-        SUM(profit) as total_profit
+        SUM(
+          CASE
+            WHEN COALESCE(sales.cost_price, products.cost_price) IS NOT NULL
+              AND COALESCE(sales.selling_price, products.selling_price) IS NOT NULL
+            THEN (
+              (COALESCE(sales.selling_price, products.selling_price) - sales.discount) -
+              COALESCE(sales.cost_price, products.cost_price)
+            ) * sales.units
+            ELSE sales.profit
+          END
+        ) as total_profit
       FROM sales
-      WHERE date LIKE '$todayString%'
-    ''');
+      LEFT JOIN products
+        ON sales.product_id = products.id
+      WHERE sales.date LIKE ?
+    ''', ['$todayString%']);
 
     return result.first;
   }
@@ -188,18 +321,34 @@ class DatabaseHelper {
     return await db.rawQuery('''
       SELECT 
         sales.id,
+        sales.product_id,
         sales.units,
         sales.discount,
         sales.total,
-        sales.profit,
         sales.date,
-        products.name
+        COALESCE(products.name, 'Deleted Product') AS name,
+        COALESCE(sales.cost_price, products.cost_price) AS cost_price,
+        COALESCE(sales.selling_price, products.selling_price) AS selling_price,
+        CASE
+          WHEN COALESCE(sales.selling_price, products.selling_price) IS NOT NULL
+          THEN COALESCE(sales.selling_price, products.selling_price) - sales.discount
+          ELSE NULL
+        END AS sold_price,
+        CASE
+          WHEN COALESCE(sales.cost_price, products.cost_price) IS NOT NULL
+            AND COALESCE(sales.selling_price, products.selling_price) IS NOT NULL
+          THEN (
+            (COALESCE(sales.selling_price, products.selling_price) - sales.discount) -
+            COALESCE(sales.cost_price, products.cost_price)
+          ) * sales.units
+          ELSE sales.profit
+        END AS profit
       FROM sales
-      JOIN products
+      LEFT JOIN products
         ON sales.product_id = products.id
-      WHERE sales.date BETWEEN '$startDate' AND '$endDate'
+      WHERE sales.date BETWEEN ? AND ?
       ORDER BY sales.id DESC
-    ''');
+    ''', [startDate, endDate]);
   }
   Future<List<Map<String, dynamic>>> getDailyRevenue() async {
     final db = await instance.database;
