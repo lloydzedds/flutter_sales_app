@@ -32,6 +32,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   final discountController = TextEditingController();
   final soldPriceController = TextEditingController();
   final discountPercentController = TextEditingController();
+  final productSearchController = TextEditingController();
 
   bool get _isEditing => widget.existingSale != null;
 
@@ -47,6 +48,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     discountController.dispose();
     soldPriceController.dispose();
     discountPercentController.dispose();
+    productSearchController.dispose();
     super.dispose();
   }
 
@@ -132,6 +134,28 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     return stock;
   }
 
+  List<Map<String, dynamic>> get _filteredProducts {
+    final query = productSearchController.text.trim().toLowerCase();
+    if (query.isEmpty) {
+      return products;
+    }
+
+    final matches = products.where((product) {
+      final name = product['name']?.toString().toLowerCase() ?? '';
+      return name.contains(query);
+    }).toList();
+
+    if (selectedProductId != null &&
+        matches.every((product) => product['id'] != selectedProductId)) {
+      final selectedMatch = products.where(
+        (product) => product['id'] == selectedProductId,
+      );
+      matches.insertAll(0, selectedMatch);
+    }
+
+    return matches;
+  }
+
   int? _parsedUnits() {
     return int.tryParse(unitsController.text.trim());
   }
@@ -171,6 +195,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       discountController.text = _formatAmount(discount);
       soldPriceController.text = _formatAmount(soldPrice < 0 ? 0.0 : soldPrice);
       discountPercentController.text = _formatAmount(discountPercent);
+      productSearchController.text = matchedProduct?['name']?.toString() ?? '';
     });
   }
 
@@ -388,6 +413,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       discountController.clear();
       soldPriceController.clear();
       discountPercentController.clear();
+      productSearchController.clear();
     });
   }
 
@@ -742,17 +768,44 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
               style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 14),
+            TextFormField(
+              controller: productSearchController,
+              textInputAction: TextInputAction.next,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                labelText: "Search Product",
+                hintText: "Type product name to filter the dropdown",
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: productSearchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        onPressed: () {
+                          productSearchController.clear();
+                          setState(() {});
+                        },
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 12),
             DropdownButtonFormField<int>(
-              key: ValueKey(selectedProductId),
+              key: ValueKey(
+                '${selectedProductId ?? 'none'}|${productSearchController.text}',
+              ),
               initialValue: selectedProductId,
-              items: products.map((product) {
+              items: _filteredProducts.map((product) {
                 return DropdownMenuItem<int>(
                   value: product['id'] as int,
                   child: Text(product['name'].toString()),
                 );
               }).toList(),
               onChanged: _selectProduct,
-              decoration: const InputDecoration(labelText: "Select Product"),
+              decoration: InputDecoration(
+                labelText: "Select Product",
+                helperText: _filteredProducts.isEmpty
+                    ? "No matching products found."
+                    : "${_filteredProducts.length} matching product${_filteredProducts.length == 1 ? '' : 's'}",
+              ),
             ),
             if (selectedProduct != null) ...[
               const SizedBox(height: 16),
