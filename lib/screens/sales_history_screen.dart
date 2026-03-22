@@ -4,7 +4,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -14,6 +13,8 @@ import '../services/sales_export_service.dart';
 import 'add_sale_screen.dart';
 
 enum _CsvExportScope { customDates, pastMonth, everything }
+
+enum _ExportAction { share, saveToLocal }
 
 class SalesHistoryScreen extends StatefulWidget {
   const SalesHistoryScreen({super.key});
@@ -32,7 +33,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   bool _isLoading = true;
   bool _isBusy = false;
 
-  String _fileLabel(File file) => path.basename(file.path);
+  String _folderLabel(File file) => file.parent.path;
 
   @override
   void initState() {
@@ -276,6 +277,43 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     );
   }
 
+  Future<_ExportAction?> _pickExportAction(String formatLabel) async {
+    return showModalBottomSheet<_ExportAction>(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.share_outlined),
+                title: Text("Share $formatLabel"),
+                subtitle: const Text(
+                  "Open the Android share menu and send the file to another app",
+                ),
+                onTap: () =>
+                    Navigator.of(sheetContext).pop(_ExportAction.share),
+              ),
+              ListTile(
+                leading: const Icon(Icons.download_outlined),
+                title: const Text("Save to Local"),
+                subtitle: const Text(
+                  "Save the file in Android/media/<app>/sale",
+                ),
+                onTap: () =>
+                    Navigator.of(sheetContext).pop(_ExportAction.saveToLocal),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<_ExportSelection?> _pickExportSelection() async {
     final scope = await _pickExportScope();
     if (scope == null) return null;
@@ -312,6 +350,8 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   Future<void> exportToCSV() async {
     final selection = await _pickExportSelection();
     if (selection == null) return;
+    final action = await _pickExportAction("CSV");
+    if (action == null) return;
 
     final exportRows = selection.hasDateRange
         ? await DatabaseHelper.instance.getSaleItemsForExport(
@@ -330,12 +370,27 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     });
 
     try {
+      final targetDirectory = action == _ExportAction.saveToLocal
+          ? null
+          : await SalesExportService.ensureShareDirectory();
       final file = await SalesExportService.saveCsvExport(
         rows: exportRows,
         exportLabel: selection.exportLabel,
+        targetDirectory: targetDirectory,
       );
+
+      if (action == _ExportAction.share) {
+        await SharePlus.instance.share(
+          ShareParams(files: [XFile(file.path)], text: "Sales CSV Export"),
+        );
+      }
+
       if (!mounted) return;
-      _showMessage("CSV saved in sales/${_fileLabel(file)}");
+      _showMessage(
+        action == _ExportAction.share
+            ? "Share sheet opened for CSV export"
+            : "CSV saved to ${_folderLabel(file)}",
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -348,6 +403,8 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   Future<void> exportToPDF() async {
     final selection = await _pickExportSelection();
     if (selection == null) return;
+    final action = await _pickExportAction("PDF");
+    if (action == null) return;
 
     final exportOrders = selection.hasDateRange
         ? await DatabaseHelper.instance.getSaleOrdersByDateRange(
@@ -366,14 +423,28 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     });
 
     try {
+      final targetDirectory = action == _ExportAction.saveToLocal
+          ? null
+          : await SalesExportService.ensureShareDirectory();
       final file = await SalesExportService.savePdfExport(
         orders: exportOrders,
         exportLabel: selection.exportLabel,
         reportTitle: selection.title,
+        targetDirectory: targetDirectory,
       );
 
+      if (action == _ExportAction.share) {
+        await SharePlus.instance.share(
+          ShareParams(files: [XFile(file.path)], text: "Sales PDF Export"),
+        );
+      }
+
       if (!mounted) return;
-      _showMessage("PDF saved in sales/${_fileLabel(file)}");
+      _showMessage(
+        action == _ExportAction.share
+            ? "Share sheet opened for PDF export"
+            : "PDF saved to ${_folderLabel(file)}",
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -886,7 +957,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     return _buildPanel(
       title: "History Tools",
       subtitle:
-          "Filter the view, export CSV or PDF into the local sales folder, or create and restore backups",
+          "Filter the view, share exports, save them locally in Android/media/<app>/sale, or create and restore backups",
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

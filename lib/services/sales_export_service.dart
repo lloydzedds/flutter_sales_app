@@ -35,20 +35,66 @@ class SalesExportService {
     return value.replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '_');
   }
 
-  static Future<Directory> ensureSalesDirectory() async {
-    final appDirectory = await getApplicationDocumentsDirectory();
-    final salesDirectory = Directory(path.join(appDirectory.path, 'sales'));
-    if (!await salesDirectory.exists()) {
-      await salesDirectory.create(recursive: true);
+  static Future<Directory> ensureLocalSaleDirectory() async {
+    Directory? baseDirectory;
+
+    if (Platform.isAndroid) {
+      final externalDirectory = await getExternalStorageDirectory();
+      final externalPath = externalDirectory?.path;
+      if (externalPath != null) {
+        const marker = '/Android/data/';
+        final markerIndex = externalPath.indexOf(marker);
+        if (markerIndex != -1) {
+          final storageRoot = externalPath.substring(0, markerIndex);
+          final packagePath = externalPath.substring(
+            markerIndex + marker.length,
+          );
+          final packageName = packagePath.split('/').first;
+
+          if (packageName.isNotEmpty) {
+            baseDirectory = Directory(
+              path.join(storageRoot, 'Android', 'media', packageName, 'sale'),
+            );
+          }
+        }
+      }
     }
-    return salesDirectory;
+
+    baseDirectory ??= await getDownloadsDirectory();
+    baseDirectory ??= await getApplicationDocumentsDirectory();
+
+    if (!await baseDirectory.exists()) {
+      await baseDirectory.create(recursive: true);
+    }
+
+    if (path.basename(baseDirectory.path) != 'sale') {
+      baseDirectory = Directory(path.join(baseDirectory.path, 'sale'));
+    }
+
+    if (!await baseDirectory.exists()) {
+      await baseDirectory.create(recursive: true);
+    }
+
+    return baseDirectory;
+  }
+
+  static Future<Directory> ensureShareDirectory() async {
+    final temporaryDirectory = await getTemporaryDirectory();
+    final shareDirectory = Directory(
+      path.join(temporaryDirectory.path, 'sale'),
+    );
+    if (!await shareDirectory.exists()) {
+      await shareDirectory.create(recursive: true);
+    }
+    return shareDirectory;
   }
 
   static Future<File> saveCsvExport({
     required List<Map<String, dynamic>> rows,
     required String exportLabel,
+    Directory? targetDirectory,
   }) async {
-    final directory = await ensureSalesDirectory();
+    final directory = targetDirectory ?? await ensureLocalSaleDirectory();
     final csv = StringBuffer(
       "Bill No,Customer,Phone,Product,Units,Selling Price,Discount,Total,Profit,Date\n",
     );
@@ -81,8 +127,9 @@ class SalesExportService {
     required List<Map<String, dynamic>> orders,
     required String exportLabel,
     required String reportTitle,
+    Directory? targetDirectory,
   }) async {
-    final directory = await ensureSalesDirectory();
+    final directory = targetDirectory ?? await ensureLocalSaleDirectory();
     final storeDetails = await DatabaseHelper.instance.getStoreDetails();
     final document = pw.Document();
     final generatedAt = DateFormat('d MMM yyyy, h:mm a').format(DateTime.now());
