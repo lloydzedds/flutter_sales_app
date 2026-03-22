@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
 
 class AddProductScreen extends StatefulWidget {
-  const AddProductScreen({super.key});
+  const AddProductScreen({super.key, this.initialProduct});
+
+  final Map<String, dynamic>? initialProduct;
 
   @override
   State<AddProductScreen> createState() => _AddProductScreenState();
@@ -25,6 +27,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialProduct != null) {
+      _applySelectedProduct(widget.initialProduct!, notify: false);
+    }
     _loadProducts();
   }
 
@@ -41,8 +46,17 @@ class _AddProductScreenState extends State<AddProductScreen> {
     final data = await DatabaseHelper.instance.getProducts();
     if (!mounted) return;
 
+    final selectedId = _selectedExistingProduct?['id'];
     setState(() {
       _products = data;
+      if (selectedId != null) {
+        for (final product in data) {
+          if (product['id'] == selectedId) {
+            _selectedExistingProduct = product;
+            break;
+          }
+        }
+      }
     });
 
     _updateMatchingProducts(nameController.text);
@@ -129,20 +143,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
   }
 
   void _handleNameChanged(String value) {
-    final typedName = value.trim().toLowerCase();
-    final selectedName =
-        _selectedExistingProduct?['name']?.toString().trim().toLowerCase() ??
-        '';
-
-    if (_selectedExistingProduct != null && typedName != selectedName) {
-      setState(() {
-        _selectedExistingProduct = null;
-        if (stockController.text == '0') {
-          stockController.clear();
-        }
-      });
-    }
-
     _updateMatchingProducts(value);
     _refreshPreview();
   }
@@ -169,7 +169,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
     });
   }
 
-  void _selectExistingProduct(Map<String, dynamic> product) {
+  void _applySelectedProduct(
+    Map<String, dynamic> product, {
+    bool notify = true,
+  }) {
     nameController.text = product['name']?.toString() ?? '';
     costController.text = _formatAmount(
       _parseAmount(product['cost_price']?.toString() ?? '') ?? 0,
@@ -179,10 +182,20 @@ class _AddProductScreenState extends State<AddProductScreen> {
     );
     stockController.text = '0';
 
-    setState(() {
+    void updateState() {
       _selectedExistingProduct = product;
       _matchingProducts = [];
-    });
+    }
+
+    if (notify) {
+      setState(updateState);
+    } else {
+      updateState();
+    }
+  }
+
+  void _selectExistingProduct(Map<String, dynamic> product) {
+    _applySelectedProduct(product);
   }
 
   void _clearSelectedExistingProduct() {
@@ -233,6 +246,19 @@ class _AddProductScreenState extends State<AddProductScreen> {
       if (_selectedExistingProduct != null) {
         final existingProduct = _selectedExistingProduct!;
         final updatedStock = _existingStock + stock;
+        final duplicateProduct = await DatabaseHelper.instance.findProduct(
+          baseName,
+          price,
+        );
+
+        if (duplicateProduct != null &&
+            duplicateProduct['id'] != existingProduct['id']) {
+          message =
+              "Another product with this name and selling price already exists.";
+          if (!mounted) return;
+          messenger.showSnackBar(SnackBar(content: Text(message)));
+          return;
+        }
 
         await DatabaseHelper.instance.updateProduct(
           productId: existingProduct['id'] as int,
@@ -324,13 +350,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    "Create a Product",
+                  Text(
+                    _isUpdatingExisting ? "Edit Product" : "Create a Product",
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    "Type a name to see existing matches. You can pick one to update its pricing and add more stock.",
+                    _isUpdatingExisting
+                        ? "Correct the product name or pricing here, and add more stock only if needed."
+                        : "Type a name to see existing matches. You can pick one to update its pricing and add more stock.",
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -362,9 +390,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 textCapitalization: TextCapitalization.words,
                 textInputAction: TextInputAction.next,
                 onChanged: _handleNameChanged,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: "Product Name",
-                  helperText: "Matching products appear below while you type.",
+                  helperText: _isUpdatingExisting
+                      ? "You can correct the product name here."
+                      : "Matching products appear below while you type.",
                 ),
                 validator: (value) {
                   final text = value?.trim() ?? '';
@@ -416,12 +446,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        "Existing Product Selected",
+                        "Editing Existing Product",
                         style: TextStyle(fontWeight: FontWeight.w700),
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        "Current stock: $_existingStock units. Update the price fields if needed, then enter how many more units to add.",
+                        "Current stock: $_existingStock units. You can correct the name or prices here, then add more stock only if needed.",
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       const SizedBox(height: 10),
@@ -634,7 +664,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.save_outlined),
-            label: Text(_isSaving ? "Saving..." : "Save Product"),
+            label: Text(
+              _isSaving
+                  ? "Saving..."
+                  : _isUpdatingExisting
+                  ? "Update Product"
+                  : "Save Product",
+            ),
           ),
         ),
         const SizedBox(height: 12),
@@ -653,7 +689,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Add Product")),
+      appBar: AppBar(
+        title: Text(_isUpdatingExisting ? "Edit Product" : "Add Product"),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [

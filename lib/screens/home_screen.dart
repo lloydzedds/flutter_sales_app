@@ -254,6 +254,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _openProductEditor(Map<String, dynamic> product) async {
+    await _pushAndRefresh(AddProductScreen(initialProduct: product));
+  }
+
   Future<void> _handleProductLongPress(Map<String, dynamic> product) async {
     final action = await showModalBottomSheet<String>(
       context: context,
@@ -266,6 +270,11 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              ListTile(
+                leading: const Icon(Icons.edit_note_outlined),
+                title: const Text("Edit Product"),
+                onTap: () => Navigator.of(sheetContext).pop('edit'),
+              ),
               ListTile(
                 leading: const Icon(Icons.add_circle_outline),
                 title: const Text("Add Stock"),
@@ -290,6 +299,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted || action == null) return;
 
     switch (action) {
+      case 'edit':
+        await _openProductEditor(product);
+        return;
       case 'add':
         await _openStockAdjustment(product: product, mode: StockAdjustMode.add);
         return;
@@ -1333,7 +1345,7 @@ class _HomeScreenState extends State<HomeScreen> {
       const SizedBox(height: 16),
       _buildPanel(
         title: "Products",
-        subtitle: "Long press any product to edit its stock",
+        subtitle: "Long press any product to edit details or adjust stock",
         child: products.isEmpty
             ? Text(
                 "No products added yet",

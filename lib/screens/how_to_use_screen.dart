@@ -67,7 +67,7 @@ class HowToUseScreen extends StatelessWidget {
             icon: Icons.inventory_2_outlined,
             title: "Manage Stock",
             description:
-                "Use Stock Adjustment to add stock, remove stock, or set the exact stock value. You can also long press products for quick stock actions.",
+                "Use Stock Adjustment to add stock, remove stock, or set the exact stock value. You can also long press products to edit product details or open quick stock actions.",
           ),
           _stepCard(
             icon: Icons.history_rounded,
