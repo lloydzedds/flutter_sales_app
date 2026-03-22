@@ -25,6 +25,8 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   bool _didLoadExistingSale = false;
   bool _missingExistingProduct = false;
   bool _isSaving = false;
+  bool _showCostPrice = false;
+  bool _showProfitLoss = false;
 
   final unitsController = TextEditingController();
   final discountController = TextEditingController();
@@ -158,6 +160,8 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       _didLoadExistingSale = true;
       _missingExistingProduct =
           existingProductId != null && matchedProduct == null;
+      _showCostPrice = false;
+      _showProfitLoss = false;
       selectedProductId = matchedProduct == null
           ? null
           : matchedProduct['id'] as int;
@@ -172,6 +176,8 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
 
   void _selectProduct(int? value) {
     setState(() {
+      _showCostPrice = false;
+      _showProfitLoss = false;
       selectedProductId = value;
       selectedProduct = value == null
           ? null
@@ -358,6 +364,8 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       setState(() {
         _didLoadExistingSale = false;
         _missingExistingProduct = false;
+        _showCostPrice = false;
+        _showProfitLoss = false;
         selectedProductId = null;
         selectedProduct = null;
         discountMode = DiscountMode.manual;
@@ -371,6 +379,8 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     }
 
     setState(() {
+      _showCostPrice = false;
+      _showProfitLoss = false;
       selectedProductId = null;
       selectedProduct = null;
       discountMode = DiscountMode.manual;
@@ -378,6 +388,80 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       discountController.clear();
       soldPriceController.clear();
       discountPercentController.clear();
+    });
+  }
+
+  Future<void> _toggleCostPriceVisibility() async {
+    if (_showCostPrice) {
+      setState(() {
+        _showCostPrice = false;
+      });
+      return;
+    }
+
+    final shouldShow = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text("Display Cost Price"),
+          content: const Text(
+            "Are you sure you want to display the cost price?",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text("No"),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text("Yes"),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted || shouldShow != true) return;
+
+    setState(() {
+      _showCostPrice = true;
+    });
+  }
+
+  Future<void> _toggleProfitLossVisibility() async {
+    if (_showProfitLoss) {
+      setState(() {
+        _showProfitLoss = false;
+      });
+      return;
+    }
+
+    final shouldShow = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text("Display Profit / Loss"),
+          content: const Text(
+            "Are you sure you want to display the profit / loss?",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text("No"),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text("Yes"),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted || shouldShow != true) return;
+
+    setState(() {
+      _showProfitLoss = true;
     });
   }
 
@@ -621,6 +705,22 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     );
   }
 
+  Widget _buildCostPriceTile(BuildContext context, double? costPrice) {
+    return InkWell(
+      onTap: _toggleCostPriceVisibility,
+      borderRadius: BorderRadius.circular(18),
+      child: _buildMetricTile(
+        context: context,
+        label: _showCostPrice ? "Cost Price" : "Cost Price Hidden",
+        value: _showCostPrice ? _formatCurrency(costPrice ?? 0) : "Tap to show",
+        icon: _showCostPrice
+            ? Icons.visibility_rounded
+            : Icons.visibility_off_rounded,
+        accentColor: const Color(0xFF57D77F),
+      ),
+    );
+  }
+
   Widget _buildSaleDetailsCard(BuildContext context) {
     final sellingPrice = _selectedSellingPrice();
     final costPrice = _selectedCostPrice();
@@ -676,15 +776,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildMetricTile(
-                      context: context,
-                      label: "Cost Price",
-                      value: _formatCurrency(costPrice ?? 0),
-                      icon: Icons.payments_outlined,
-                      accentColor: const Color(0xFF57D77F),
-                    ),
-                  ),
+                  Expanded(child: _buildCostPriceTile(context, costPrice)),
                 ],
               ),
               const SizedBox(height: 12),
@@ -872,6 +964,23 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     );
   }
 
+  Widget _buildProtectedProfitLossRow(
+    BuildContext context, {
+    required double? profit,
+    Color? valueColor,
+  }) {
+    return InkWell(
+      onTap: _toggleProfitLossVisibility,
+      borderRadius: BorderRadius.circular(12),
+      child: _buildSummaryRow(
+        context,
+        _showProfitLoss ? "Profit / Loss" : "Profit / Loss Hidden",
+        _showProfitLoss ? _moneyOrPlaceholder(profit) : "Tap to show",
+        valueColor: _showProfitLoss ? valueColor : null,
+      ),
+    );
+  }
+
   String _moneyOrPlaceholder(double? value) {
     if (value == null) return "--";
     return _formatCurrency(value);
@@ -927,10 +1036,9 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
               "Net Sale Amount",
               _moneyOrPlaceholder(_netTotalPreview()),
             ),
-            _buildSummaryRow(
+            _buildProtectedProfitLossRow(
               context,
-              "Profit / Loss",
-              _moneyOrPlaceholder(profit),
+              profit: profit,
               valueColor: profitColor,
             ),
             _buildSummaryRow(
