@@ -79,7 +79,7 @@ class HowToUseScreen extends StatelessWidget {
             icon: Icons.settings_outlined,
             title: "Settings and Backup",
             description:
-                "Settings lets you change theme, update store details, take local backups, restore old backups, and review this guide anytime.",
+                "Settings lets you change theme, choose the default discount mode for Record Sale, update store details, take local backups, restore old backups, and review this guide anytime.",
           ),
         ],
       ),

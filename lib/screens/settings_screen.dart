@@ -145,6 +145,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final storeName = _storeDetails['store_name']?.trim() ?? '';
     final ownerName = _storeDetails['store_owner']?.trim() ?? '';
+    final defaultDiscountMode = _controller.defaultDiscountMode;
 
     return Scaffold(
       appBar: AppBar(title: const Text("Settings")),
@@ -185,6 +186,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 12),
                 Text(
                   "Current: ${_controller.themeModeLabel(_controller.themeMode)}",
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ),
+          ),
+          _buildSection(
+            title: "Record Sale Defaults",
+            subtitle: "Choose which discount option opens first in Record Sale",
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment<String>(
+                      value: 'manual',
+                      icon: Icon(Icons.edit_outlined),
+                      label: Text("Manual"),
+                    ),
+                    ButtonSegment<String>(
+                      value: 'sold_price',
+                      icon: Icon(Icons.sell_outlined),
+                      label: Text("Sold Price"),
+                    ),
+                    ButtonSegment<String>(
+                      value: 'percentage',
+                      icon: Icon(Icons.percent_rounded),
+                      label: Text("Percentage"),
+                    ),
+                  ],
+                  selected: {defaultDiscountMode},
+                  onSelectionChanged: (selection) {
+                    if (selection.isEmpty) return;
+                    _controller.setDefaultDiscountMode(selection.first);
+                  },
+                  showSelectedIcon: false,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  "Current: ${_controller.discountModeLabel(defaultDiscountMode)}",
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ],

@@ -6,14 +6,24 @@ class AppSettingsController extends ChangeNotifier {
   AppSettingsController._();
 
   static final AppSettingsController instance = AppSettingsController._();
+  static const _themeModeKey = 'theme_mode';
+  static const _defaultDiscountModeKey = 'default_discount_mode';
 
   ThemeMode _themeMode = ThemeMode.system;
+  String _defaultDiscountMode = 'manual';
 
   ThemeMode get themeMode => _themeMode;
+  String get defaultDiscountMode => _defaultDiscountMode;
 
   Future<void> load() async {
-    final savedMode = await DatabaseHelper.instance.getAppSetting('theme_mode');
-    _themeMode = _themeModeFromString(savedMode);
+    final savedThemeMode = await DatabaseHelper.instance.getAppSetting(
+      _themeModeKey,
+    );
+    final savedDiscountMode = await DatabaseHelper.instance.getAppSetting(
+      _defaultDiscountModeKey,
+    );
+    _themeMode = _themeModeFromString(savedThemeMode);
+    _defaultDiscountMode = _discountModeFromString(savedDiscountMode);
   }
 
   Future<void> reload() async {
@@ -24,8 +34,17 @@ class AppSettingsController extends ChangeNotifier {
   Future<void> setThemeMode(ThemeMode mode) async {
     _themeMode = mode;
     await DatabaseHelper.instance.saveAppSetting(
-      'theme_mode',
+      _themeModeKey,
       _themeModeToString(mode),
+    );
+    notifyListeners();
+  }
+
+  Future<void> setDefaultDiscountMode(String mode) async {
+    _defaultDiscountMode = _discountModeFromString(mode);
+    await DatabaseHelper.instance.saveAppSetting(
+      _defaultDiscountModeKey,
+      _defaultDiscountMode,
     );
     notifyListeners();
   }
@@ -38,6 +57,17 @@ class AppSettingsController extends ChangeNotifier {
         return 'Light';
       case ThemeMode.dark:
         return 'Dark';
+    }
+  }
+
+  String discountModeLabel(String mode) {
+    switch (_discountModeFromString(mode)) {
+      case 'sold_price':
+        return 'Sold Price';
+      case 'percentage':
+        return 'Percentage';
+      default:
+        return 'Manual';
     }
   }
 
@@ -60,6 +90,17 @@ class AppSettingsController extends ChangeNotifier {
         return 'dark';
       case ThemeMode.system:
         return 'system';
+    }
+  }
+
+  String _discountModeFromString(String? value) {
+    switch (value) {
+      case 'sold_price':
+      case 'percentage':
+      case 'manual':
+        return value!;
+      default:
+        return 'manual';
     }
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../app_settings_controller.dart';
 import '../database/database_helper.dart';
 import 'add_product_screen.dart';
 
@@ -33,22 +34,38 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   final soldPriceController = TextEditingController();
   final discountPercentController = TextEditingController();
   final productSearchController = TextEditingController();
+  final productSearchFocusNode = FocusNode();
 
   bool get _isEditing => widget.existingSale != null;
+
+  DiscountMode get _defaultDiscountMode {
+    switch (AppSettingsController.instance.defaultDiscountMode) {
+      case 'sold_price':
+        return DiscountMode.soldPrice;
+      case 'percentage':
+        return DiscountMode.percentage;
+      default:
+        return DiscountMode.manual;
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    productSearchController.addListener(_handleProductSearchChanged);
+    discountMode = _defaultDiscountMode;
     loadProducts();
   }
 
   @override
   void dispose() {
+    productSearchController.removeListener(_handleProductSearchChanged);
     unitsController.dispose();
     discountController.dispose();
     soldPriceController.dispose();
     discountPercentController.dispose();
     productSearchController.dispose();
+    productSearchFocusNode.dispose();
     super.dispose();
   }
 
@@ -134,26 +151,27 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     return stock;
   }
 
-  List<Map<String, dynamic>> get _filteredProducts {
-    final query = productSearchController.text.trim().toLowerCase();
-    if (query.isEmpty) {
-      return products;
-    }
-
-    final matches = products.where((product) {
-      final name = product['name']?.toString().toLowerCase() ?? '';
-      return name.contains(query);
-    }).toList();
-
-    if (selectedProductId != null &&
-        matches.every((product) => product['id'] != selectedProductId)) {
-      final selectedMatch = products.where(
-        (product) => product['id'] == selectedProductId,
+  List<DropdownMenuEntry<int>> get _productMenuEntries {
+    return products.map((product) {
+      return DropdownMenuEntry<int>(
+        value: product['id'] as int,
+        label: product['name'].toString(),
       );
-      matches.insertAll(0, selectedMatch);
+    }).toList();
+  }
+
+  List<DropdownMenuEntry<int>> _filterProductEntries(
+    List<DropdownMenuEntry<int>> entries,
+    String filter,
+  ) {
+    final query = filter.trim().toLowerCase();
+    if (query.isEmpty) {
+      return entries;
     }
 
-    return matches;
+    return entries.where((entry) {
+      return entry.label.toLowerCase().contains(query);
+    }).toList();
   }
 
   int? _parsedUnits() {
@@ -191,7 +209,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
           : matchedProduct['id'] as int;
       selectedProduct = matchedProduct;
       unitsController.text = sale['units']?.toString() ?? '';
-      discountMode = DiscountMode.manual;
+      discountMode = _defaultDiscountMode;
       discountController.text = _formatAmount(discount);
       soldPriceController.text = _formatAmount(soldPrice < 0 ? 0.0 : soldPrice);
       discountPercentController.text = _formatAmount(discountPercent);
@@ -200,19 +218,50 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   }
 
   void _selectProduct(int? value) {
+    final nextProduct = value == null
+        ? null
+        : products.firstWhere((product) => product['id'] == value);
+
     setState(() {
       _showCostPrice = false;
       _showProfitLoss = false;
       selectedProductId = value;
-      selectedProduct = value == null
-          ? null
-          : products.firstWhere((product) => product['id'] == value);
+      selectedProduct = nextProduct;
       if (value != null) {
         _missingExistingProduct = false;
       }
     });
 
+    if (nextProduct == null) {
+      productSearchController.clear();
+    } else {
+      productSearchController.text = nextProduct['name'].toString();
+    }
+    productSearchFocusNode.unfocus();
     _syncCalculatedDiscount();
+  }
+
+  void _handleProductSearchChanged() {
+    if (!mounted) return;
+
+    final typedName = productSearchController.text.trim().toLowerCase();
+    final selectedName =
+        selectedProduct?['name']?.toString().trim().toLowerCase() ?? '';
+    final shouldClearSelection =
+        selectedProduct != null && typedName != selectedName;
+
+    if (shouldClearSelection) {
+      setState(() {
+        _showCostPrice = false;
+        _showProfitLoss = false;
+        selectedProductId = null;
+        selectedProduct = null;
+      });
+      _syncCalculatedDiscount();
+      return;
+    }
+
+    setState(() {});
   }
 
   void _syncCalculatedDiscount() {
@@ -393,7 +442,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
         _showProfitLoss = false;
         selectedProductId = null;
         selectedProduct = null;
-        discountMode = DiscountMode.manual;
+        discountMode = _defaultDiscountMode;
         unitsController.clear();
         discountController.clear();
         soldPriceController.clear();
@@ -408,7 +457,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       _showProfitLoss = false;
       selectedProductId = null;
       selectedProduct = null;
-      discountMode = DiscountMode.manual;
+      discountMode = _defaultDiscountMode;
       unitsController.clear();
       discountController.clear();
       soldPriceController.clear();
@@ -768,44 +817,25 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
               style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 14),
-            TextFormField(
-              controller: productSearchController,
-              textInputAction: TextInputAction.next,
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                labelText: "Search Product",
-                hintText: "Type product name to filter the dropdown",
-                prefixIcon: const Icon(Icons.search_rounded),
-                suffixIcon: productSearchController.text.isEmpty
-                    ? null
-                    : IconButton(
-                        onPressed: () {
-                          productSearchController.clear();
-                          setState(() {});
-                        },
-                        icon: const Icon(Icons.close_rounded),
-                      ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<int>(
+            DropdownMenu<int>(
               key: ValueKey(
-                '${selectedProductId ?? 'none'}|${productSearchController.text}',
+                '${selectedProductId ?? 'none'}|${products.length}',
               ),
-              initialValue: selectedProductId,
-              items: _filteredProducts.map((product) {
-                return DropdownMenuItem<int>(
-                  value: product['id'] as int,
-                  child: Text(product['name'].toString()),
-                );
-              }).toList(),
-              onChanged: _selectProduct,
-              decoration: InputDecoration(
-                labelText: "Select Product",
-                helperText: _filteredProducts.isEmpty
-                    ? "No matching products found."
-                    : "${_filteredProducts.length} matching product${_filteredProducts.length == 1 ? '' : 's'}",
-              ),
+              controller: productSearchController,
+              focusNode: productSearchFocusNode,
+              initialSelection: selectedProductId,
+              requestFocusOnTap: true,
+              enableFilter: true,
+              enableSearch: true,
+              menuHeight: 280,
+              width: double.infinity,
+              leadingIcon: const Icon(Icons.search_rounded),
+              label: const Text("Select Product"),
+              hintText: "Tap to search or browse products",
+              helperText: "Type a product name to filter the list.",
+              filterCallback: _filterProductEntries,
+              dropdownMenuEntries: _productMenuEntries,
+              onSelected: _selectProduct,
             ),
             if (selectedProduct != null) ...[
               const SizedBox(height: 16),
