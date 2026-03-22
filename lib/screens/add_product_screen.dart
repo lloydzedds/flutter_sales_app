@@ -1,5 +1,6 @@
-import '../database/database_helper.dart';
 import 'package:flutter/material.dart';
+
+import '../database/database_helper.dart';
 
 class AddProductScreen extends StatefulWidget {
   const AddProductScreen({super.key});
@@ -9,102 +10,460 @@ class AddProductScreen extends StatefulWidget {
 }
 
 class _AddProductScreenState extends State<AddProductScreen> {
+  final _formKey = GlobalKey<FormState>();
+
   final nameController = TextEditingController();
   final costController = TextEditingController();
   final priceController = TextEditingController();
   final stockController = TextEditingController();
 
+  bool _isSaving = false;
+
+  @override
+  void dispose() {
+    nameController.dispose();
+    costController.dispose();
+    priceController.dispose();
+    stockController.dispose();
+    super.dispose();
+  }
+
+  double? _parseAmount(String value) {
+    return double.tryParse(value.trim());
+  }
+
+  int? _parseStock(String value) {
+    return int.tryParse(value.trim());
+  }
+
+  String _normalizedName() {
+    return nameController.text.trim().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  double get _costValue => _parseAmount(costController.text) ?? 0;
+
+  double get _sellingValue => _parseAmount(priceController.text) ?? 0;
+
+  int get _stockValue => _parseStock(stockController.text) ?? 0;
+
+  double get _unitResult => _sellingValue - _costValue;
+
+  double get _inventoryCost => _costValue * _stockValue;
+
+  double get _inventoryRevenue => _sellingValue * _stockValue;
+
+  double get _inventoryResult => _unitResult * _stockValue;
+
+  String _formatAmount(double value) {
+    if (value == value.roundToDouble()) {
+      return value.toStringAsFixed(0);
+    }
+    return value.toStringAsFixed(2);
+  }
+
+  String _formatCurrency(double value) {
+    return "Rs ${_formatAmount(value)}";
+  }
+
+  Color _resultColor(ColorScheme colorScheme) {
+    if (_unitResult < 0) {
+      return colorScheme.error;
+    }
+    if (_unitResult > 0) {
+      return colorScheme.secondary;
+    }
+    return colorScheme.onSurface.withAlpha(180);
+  }
+
+  String _resultLabel() {
+    if (_unitResult < 0) {
+      return "Loss per unit";
+    }
+    if (_unitResult > 0) {
+      return "Profit per unit";
+    }
+    return "Break-even per unit";
+  }
+
+  void _refreshPreview([String _ = '']) {
+    setState(() {});
+  }
+
+  void _resetForm() {
+    nameController.clear();
+    costController.clear();
+    priceController.clear();
+    stockController.clear();
+    _formKey.currentState?.reset();
+    _refreshPreview();
+  }
+
+  Future<void> _saveProduct() async {
+    final form = _formKey.currentState;
+    if (form == null || !form.validate()) {
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+    FocusScope.of(context).unfocus();
+
+    final baseName = _normalizedName();
+    final cost = _parseAmount(costController.text)!;
+    final price = _parseAmount(priceController.text)!;
+    final stock = _parseStock(stockController.text)!;
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      final existingSamePrice = await DatabaseHelper.instance.findProduct(
+        baseName,
+        price,
+      );
+
+      late final String message;
+      if (existingSamePrice != null) {
+        final currentStock = existingSamePrice['stock'];
+        final newStock =
+            (currentStock is num ? currentStock.toInt() : 0) + stock;
+
+        await DatabaseHelper.instance.updateStock(
+          existingSamePrice['id'] as int,
+          newStock,
+        );
+        message = "Existing product found. Stock updated to $newStock.";
+      } else {
+        final sameNameList = await DatabaseHelper.instance.findByName(baseName);
+        final finalName = sameNameList.isNotEmpty
+            ? "$baseName (${_formatAmount(price)})"
+            : baseName;
+
+        await DatabaseHelper.instance.insertProduct({
+          'name': finalName,
+          'cost_price': cost,
+          'selling_price': price,
+          'stock': stock,
+        });
+
+        message = sameNameList.isNotEmpty
+            ? "New price variation added as $finalName."
+            : "New product added successfully.";
+      }
+
+      if (!mounted) return;
+      _resetForm();
+      messenger.showSnackBar(SnackBar(content: Text(message)));
+    } catch (_) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text("Could not save the product right now.")),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
+  }
+
+  Widget _buildIntroCard(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          children: [
+            Container(
+              height: 52,
+              width: 52,
+              decoration: BoxDecoration(
+                color: colorScheme.primary.withAlpha(28),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Icon(
+                Icons.inventory_2_outlined,
+                color: colorScheme.primary,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "Create a Product",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    "If the same name and selling price already exist, this screen adds stock to that product instead of creating a duplicate.",
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailsForm(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Form(
+          key: _formKey,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                "Product Details",
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: nameController,
+                textCapitalization: TextCapitalization.words,
+                textInputAction: TextInputAction.next,
+                onChanged: _refreshPreview,
+                decoration: const InputDecoration(
+                  labelText: "Product Name",
+                  helperText:
+                      "Use the main name. Price variations will be labeled automatically.",
+                ),
+                validator: (value) {
+                  final text = value?.trim() ?? '';
+                  if (text.isEmpty) {
+                    return "Enter a product name";
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: costController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      textInputAction: TextInputAction.next,
+                      onChanged: _refreshPreview,
+                      decoration: const InputDecoration(
+                        labelText: "Cost Price",
+                        prefixText: "Rs ",
+                      ),
+                      validator: (value) {
+                        final amount = _parseAmount(value ?? '');
+                        if (amount == null) {
+                          return "Enter a valid amount";
+                        }
+                        if (amount < 0) {
+                          return "Cost cannot be negative";
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextFormField(
+                      controller: priceController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      textInputAction: TextInputAction.next,
+                      onChanged: _refreshPreview,
+                      decoration: const InputDecoration(
+                        labelText: "Selling Price",
+                        prefixText: "Rs ",
+                      ),
+                      validator: (value) {
+                        final amount = _parseAmount(value ?? '');
+                        if (amount == null) {
+                          return "Enter a valid amount";
+                        }
+                        if (amount < 0) {
+                          return "Selling price cannot be negative";
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: stockController,
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.done,
+                onChanged: _refreshPreview,
+                decoration: const InputDecoration(
+                  labelText: "Initial Stock",
+                  helperText:
+                      "You can still change stock later from Stock Adjustment.",
+                ),
+                validator: (value) {
+                  final stock = _parseStock(value ?? '');
+                  if (stock == null) {
+                    return "Enter a whole number";
+                  }
+                  if (stock < 0) {
+                    return "Stock cannot be negative";
+                  }
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPreviewRow(String label, String value, {Color? valueColor}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Expanded(child: Text(label)),
+          Text(
+            value,
+            style: TextStyle(fontWeight: FontWeight.w700, color: valueColor),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPreviewCard(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final name = _normalizedName();
+    final resultColor = _resultColor(colorScheme);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name.isEmpty ? "Product Preview" : name,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "Review the pricing and stock impact before saving.",
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: resultColor.withAlpha(20),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    _resultLabel(),
+                    style: TextStyle(
+                      color: resultColor,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildPreviewRow("Cost Price", _formatCurrency(_costValue)),
+            _buildPreviewRow("Selling Price", _formatCurrency(_sellingValue)),
+            _buildPreviewRow(
+              _resultLabel(),
+              _formatCurrency(_unitResult),
+              valueColor: resultColor,
+            ),
+            _buildPreviewRow("Opening Stock", "$_stockValue units"),
+            const Divider(height: 22),
+            _buildPreviewRow("Inventory Cost", _formatCurrency(_inventoryCost)),
+            _buildPreviewRow(
+              "Potential Revenue",
+              _formatCurrency(_inventoryRevenue),
+            ),
+            _buildPreviewRow(
+              "Potential Result",
+              _formatCurrency(_inventoryResult),
+              valueColor: resultColor,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButtons(BuildContext context) {
+    return Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _isSaving ? null : _saveProduct,
+            icon: _isSaving
+                ? const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.save_outlined),
+            label: Text(_isSaving ? "Saving..." : "Save Product"),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _isSaving ? null : _resetForm,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text("Clear Form"),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text("Add Product")),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(labelText: "Product Name"),
-            ),
-            TextField(
-              controller: costController,
-              decoration: const InputDecoration(labelText: "Cost Price"),
-              keyboardType: TextInputType.number,
-            ),
-            TextField(
-              controller: priceController,
-              decoration: const InputDecoration(labelText: "Selling Price"),
-              keyboardType: TextInputType.number,
-            ),
-            TextField(
-              controller: stockController,
-              decoration: const InputDecoration(labelText: "Initial Stock"),
-              keyboardType: TextInputType.number,
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: () async {
-                if (nameController.text.isEmpty ||
-                    costController.text.isEmpty ||
-                    priceController.text.isEmpty ||
-                    stockController.text.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Fill all fields")),
-                  );
-                  return;
-                }
-
-                String baseName = nameController.text.trim();
-                double cost = double.parse(costController.text);
-                double price = double.parse(priceController.text);
-                int stock = int.parse(stockController.text);
-
-                final existingSamePrice =
-                    await DatabaseHelper.instance.findProduct(baseName, price);
-
-                if (existingSamePrice != null) {
-                  int newStock = existingSamePrice['stock'] + stock;
-
-                  await DatabaseHelper.instance.updateStock(
-                    existingSamePrice['id'],
-                    newStock,
-                  );
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Stock Updated")),
-                  );
-                } else {
-                  // Check if same name but different price exists
-                  final sameNameList =
-                      await DatabaseHelper.instance.findByName(baseName);
-
-                  String finalName = baseName;
-
-                  if (sameNameList.isNotEmpty) {
-                    finalName = "$baseName ($price)";
-                  }
-
-                  await DatabaseHelper.instance.insertProduct({
-                    'name': finalName,
-                    'cost_price': cost,
-                    'selling_price': price,
-                    'stock': stock,
-                  });
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("New Product Added")),
-                  );
-                }
-
-                nameController.clear();
-                costController.clear();
-                priceController.clear();
-                stockController.clear();
-              },
-              child: const Text("Save Product"),
-            )
-          ],
-        ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _buildIntroCard(context),
+          const SizedBox(height: 16),
+          _buildDetailsForm(context),
+          const SizedBox(height: 16),
+          _buildPreviewCard(context),
+          const SizedBox(height: 16),
+          _buildActionButtons(context),
+        ],
       ),
     );
   }
