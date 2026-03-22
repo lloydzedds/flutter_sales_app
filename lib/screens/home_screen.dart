@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../database/database_helper.dart';
 import 'add_product_screen.dart';
 import 'add_sale_screen.dart';
+import 'customers_screen.dart';
 import 'settings_screen.dart';
 import 'sales_history_screen.dart';
 import 'stock_adjust_screen.dart';
@@ -1268,7 +1269,7 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             _buildWideActionTile(
               title: "Record Sale",
-              subtitle: "Create a new order with discount tools",
+              subtitle: "Create a new multi-product order",
               icon: Icons.shopping_cart_checkout_rounded,
               color: _accent,
               onTap: () => _pushAndRefresh(const AddSaleScreen()),
@@ -1276,10 +1277,18 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 12),
             _buildWideActionTile(
               title: "Sales History",
-              subtitle: "Filter and review old transactions",
+              subtitle: "Review orders, export records, and share bills",
               icon: Icons.history_rounded,
               color: const Color(0xFF4B8CFF),
               onTap: () => _pushAndRefresh(const SalesHistoryScreen()),
+            ),
+            const SizedBox(height: 12),
+            _buildWideActionTile(
+              title: "Customers",
+              subtitle: "Search customers and open their purchase history",
+              icon: Icons.people_alt_outlined,
+              color: const Color(0xFF57D77F),
+              onTap: () => _pushAndRefresh(const CustomersScreen()),
             ),
           ],
         ),

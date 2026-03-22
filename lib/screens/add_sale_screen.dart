@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import '../app_settings_controller.dart';
 import '../database/database_helper.dart';
@@ -17,24 +16,31 @@ class AddSaleScreen extends StatefulWidget {
 }
 
 class _AddSaleScreenState extends State<AddSaleScreen> {
-  final _formKey = GlobalKey<FormState>();
+  final _lineItemFormKey = GlobalKey<FormState>();
 
-  List<Map<String, dynamic>> products = [];
-  int? selectedProductId;
-  Map<String, dynamic>? selectedProduct;
-  DiscountMode discountMode = DiscountMode.manual;
-  bool _didLoadExistingSale = false;
-  bool _missingExistingProduct = false;
-  bool _isSaving = false;
-  bool _showCostPrice = false;
-  bool _showProfitLoss = false;
-
+  final customerNameController = TextEditingController();
+  final customerPhoneController = TextEditingController();
   final unitsController = TextEditingController();
   final discountController = TextEditingController();
   final soldPriceController = TextEditingController();
   final discountPercentController = TextEditingController();
   final productSearchController = TextEditingController();
   final productSearchFocusNode = FocusNode();
+
+  List<Map<String, dynamic>> products = [];
+  List<_DraftSaleItem> _items = [];
+  List<_DraftSaleItem> _originalItems = [];
+  int? selectedProductId;
+  Map<String, dynamic>? selectedProduct;
+  double? _composerCostPrice;
+  double? _composerSellingPrice;
+  DiscountMode discountMode = DiscountMode.manual;
+  bool _didLoadExistingSale = false;
+  bool _missingExistingProduct = false;
+  bool _isSaving = false;
+  bool _showCostPrice = false;
+  bool _showProfitLoss = false;
+  int? _editingItemIndex;
 
   bool get _isEditing => widget.existingSale != null;
 
@@ -49,17 +55,27 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     }
   }
 
+  String get _groupKey {
+    final existing = widget.existingSale;
+    if (existing == null) return '';
+    final key = existing['group_key']?.toString();
+    if (key != null && key.isNotEmpty) return key;
+    return 'legacy-${existing['id']}';
+  }
+
   @override
   void initState() {
     super.initState();
-    productSearchController.addListener(_handleProductSearchChanged);
     discountMode = _defaultDiscountMode;
-    loadProducts();
+    productSearchController.addListener(_handleProductSearchChanged);
+    _loadProducts();
   }
 
   @override
   void dispose() {
     productSearchController.removeListener(_handleProductSearchChanged);
+    customerNameController.dispose();
+    customerPhoneController.dispose();
     unitsController.dispose();
     discountController.dispose();
     soldPriceController.dispose();
@@ -69,7 +85,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     super.dispose();
   }
 
-  Future<void> loadProducts() async {
+  Future<void> _loadProducts() async {
     final data = await DatabaseHelper.instance.getProducts();
     if (!mounted) return;
 
@@ -77,7 +93,40 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       products = data;
     });
 
-    _populateExistingSale();
+    await _populateExistingSale();
+  }
+
+  Future<void> _populateExistingSale() async {
+    if (!_isEditing || _didLoadExistingSale) return;
+
+    final items = await DatabaseHelper.instance.getSaleItemsForGroupKey(
+      _groupKey,
+    );
+    if (!mounted) return;
+
+    final draftItems = items.map(_DraftSaleItem.fromMap).toList();
+    var missingProduct = false;
+    for (final item in draftItems) {
+      final exists = products.any((product) => product['id'] == item.productId);
+      if (!exists) {
+        missingProduct = true;
+        break;
+      }
+    }
+
+    setState(() {
+      _didLoadExistingSale = true;
+      _missingExistingProduct = missingProduct;
+      _showCostPrice = false;
+      _showProfitLoss = false;
+      _items = draftItems;
+      _originalItems = draftItems.map((item) => item.copy()).toList();
+      customerNameController.text =
+          widget.existingSale?['customer_name']?.toString() ?? '';
+      customerPhoneController.text =
+          widget.existingSale?['customer_phone']?.toString() ?? '';
+      discountMode = _defaultDiscountMode;
+    });
   }
 
   Future<void> _openAddProduct() async {
@@ -87,7 +136,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     );
 
     if (!mounted) return;
-    await loadProducts();
+    await _loadProducts();
   }
 
   void _showMessage(String message) {
@@ -97,19 +146,13 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   }
 
   double _asDouble(dynamic value) {
-    if (value is num) {
-      return value.toDouble();
-    }
+    if (value is num) return value.toDouble();
     return double.tryParse(value?.toString() ?? '') ?? 0;
   }
 
   int _asInt(dynamic value) {
-    if (value is int) {
-      return value;
-    }
-    if (value is num) {
-      return value.toInt();
-    }
+    if (value is int) return value;
+    if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
@@ -124,183 +167,52 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     return "Rs ${_formatAmount(value)}";
   }
 
-  double? _selectedSellingPrice() {
-    final price = selectedProduct?['selling_price'];
-    if (price is num) {
-      return price.toDouble();
-    }
-    return null;
-  }
+  double? _selectedSellingPrice() => _composerSellingPrice;
 
-  double? _selectedCostPrice() {
-    final price = selectedProduct?['cost_price'];
-    if (price is num) {
-      return price.toDouble();
-    }
-    return null;
-  }
+  double? _selectedCostPrice() => _composerCostPrice;
 
-  int _availableStock() {
-    final product = selectedProduct;
-    if (product == null) return 0;
-
-    var stock = _asInt(product['stock']);
-    if (_isEditing && widget.existingSale?['product_id'] == product['id']) {
-      stock += _asInt(widget.existingSale?['units']);
-    }
-    return stock;
-  }
-
-  List<DropdownMenuEntry<int>> get _productMenuEntries {
-    return products.map((product) {
-      return DropdownMenuEntry<int>(
-        value: product['id'] as int,
-        label: product['name'].toString(),
-      );
-    }).toList();
-  }
-
-  List<DropdownMenuEntry<int>> _filterProductEntries(
-    List<DropdownMenuEntry<int>> entries,
-    String filter,
-  ) {
-    final query = filter.trim().toLowerCase();
-    if (query.isEmpty) {
-      return entries;
-    }
-
-    return entries.where((entry) {
-      return entry.label.toLowerCase().contains(query);
-    }).toList();
-  }
-
-  int? _parsedUnits() {
-    return int.tryParse(unitsController.text.trim());
-  }
-
-  void _populateExistingSale() {
-    final sale = widget.existingSale;
-    if (sale == null || _didLoadExistingSale) return;
-
-    final existingProductId = sale['product_id'] as int?;
+  int _baseAvailableStockForProduct(int productId) {
     Map<String, dynamic>? matchedProduct;
     for (final product in products) {
-      if (product['id'] == existingProductId) {
+      if (product['id'] == productId) {
         matchedProduct = product;
         break;
       }
     }
 
-    final sellingPrice = _asDouble(sale['selling_price']);
-    final discount = _asDouble(sale['discount']);
-    final soldPrice = sellingPrice - discount;
-    final discountPercent = sellingPrice > 0
-        ? (discount / sellingPrice) * 100
-        : 0.0;
+    if (matchedProduct == null) return 0;
 
-    setState(() {
-      _didLoadExistingSale = true;
-      _missingExistingProduct =
-          existingProductId != null && matchedProduct == null;
-      _showCostPrice = false;
-      _showProfitLoss = false;
-      selectedProductId = matchedProduct == null
-          ? null
-          : matchedProduct['id'] as int;
-      selectedProduct = matchedProduct;
-      unitsController.text = sale['units']?.toString() ?? '';
-      discountMode = _defaultDiscountMode;
-      discountController.text = _formatAmount(discount);
-      soldPriceController.text = _formatAmount(soldPrice < 0 ? 0.0 : soldPrice);
-      discountPercentController.text = _formatAmount(discountPercent);
-      productSearchController.text = matchedProduct?['name']?.toString() ?? '';
-    });
-  }
-
-  void _selectProduct(int? value) {
-    final nextProduct = value == null
-        ? null
-        : products.firstWhere((product) => product['id'] == value);
-
-    setState(() {
-      _showCostPrice = false;
-      _showProfitLoss = false;
-      selectedProductId = value;
-      selectedProduct = nextProduct;
-      if (value != null) {
-        _missingExistingProduct = false;
+    var stock = _asInt(matchedProduct['stock']);
+    for (final item in _originalItems) {
+      if (item.productId == productId) {
+        stock += item.units;
       }
-    });
-
-    if (nextProduct == null) {
-      productSearchController.clear();
-    } else {
-      productSearchController.text = nextProduct['name'].toString();
     }
-    productSearchFocusNode.unfocus();
-    _syncCalculatedDiscount();
+    return stock;
   }
 
-  void _handleProductSearchChanged() {
-    if (!mounted) return;
-
-    final typedName = productSearchController.text.trim().toLowerCase();
-    final selectedName =
-        selectedProduct?['name']?.toString().trim().toLowerCase() ?? '';
-    final shouldClearSelection =
-        selectedProduct != null && typedName != selectedName;
-
-    if (shouldClearSelection) {
-      setState(() {
-        _showCostPrice = false;
-        _showProfitLoss = false;
-        selectedProductId = null;
-        selectedProduct = null;
-      });
-      _syncCalculatedDiscount();
-      return;
-    }
-
-    setState(() {});
-  }
-
-  void _syncCalculatedDiscount() {
-    if (discountMode == DiscountMode.manual) {
-      setState(() {});
-      return;
-    }
-
-    final discount = _resolveDiscount(showErrors: false);
-    setState(() {
-      if (discount == null) {
-        discountController.clear();
-      } else {
-        discountController.text = _formatAmount(discount);
+  int _reservedUnitsInDraftForProduct(int productId) {
+    var total = 0;
+    for (var index = 0; index < _items.length; index++) {
+      if (_editingItemIndex != null && _editingItemIndex == index) {
+        continue;
       }
-    });
-  }
-
-  void _changeDiscountMode(DiscountMode mode) {
-    final currentDiscount = _resolveDiscount(showErrors: false);
-
-    setState(() {
-      discountMode = mode;
-      if (mode == DiscountMode.manual) {
-        if (currentDiscount != null) {
-          discountController.text = _formatAmount(currentDiscount);
-        }
-      } else {
-        if (mode != DiscountMode.soldPrice) {
-          soldPriceController.clear();
-        }
-        if (mode != DiscountMode.percentage) {
-          discountPercentController.clear();
-        }
+      final item = _items[index];
+      if (item.productId == productId) {
+        total += item.units;
       }
-    });
-
-    _syncCalculatedDiscount();
+    }
+    return total;
   }
+
+  int _availableStockForComposer() {
+    final productId = selectedProductId;
+    if (productId == null) return 0;
+    return _baseAvailableStockForProduct(productId) -
+        _reservedUnitsInDraftForProduct(productId);
+  }
+
+  int? _parsedUnits() => int.tryParse(unitsController.text.trim());
 
   double? _resolveDiscount({required bool showErrors}) {
     final sellingPrice = _selectedSellingPrice();
@@ -354,73 +266,20 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     return discount;
   }
 
-  double? _soldPricePreview() {
-    final sellingPrice = _selectedSellingPrice();
+  void _syncCalculatedDiscount() {
+    if (discountMode == DiscountMode.manual) {
+      setState(() {});
+      return;
+    }
+
     final discount = _resolveDiscount(showErrors: false);
-    if (sellingPrice == null || discount == null) return null;
-
-    final soldPrice = sellingPrice - discount;
-    if (soldPrice < 0) return null;
-    return soldPrice;
-  }
-
-  double? _grossTotalPreview() {
-    final sellingPrice = _selectedSellingPrice();
-    final units = _parsedUnits();
-    if (sellingPrice == null || units == null || units <= 0) return null;
-    return sellingPrice * units;
-  }
-
-  double? _totalDiscountPreview() {
-    final discount = _resolveDiscount(showErrors: false);
-    final units = _parsedUnits();
-    if (discount == null || units == null || units <= 0) return null;
-    return discount * units;
-  }
-
-  double? _netTotalPreview() {
-    final soldPrice = _soldPricePreview();
-    final units = _parsedUnits();
-    if (soldPrice == null || units == null || units <= 0) return null;
-    return soldPrice * units;
-  }
-
-  double? _profitPreview() {
-    final soldPrice = _soldPricePreview();
-    final costPrice = _selectedCostPrice();
-    final units = _parsedUnits();
-    if (soldPrice == null || costPrice == null || units == null || units <= 0) {
-      return null;
-    }
-    return (soldPrice - costPrice) * units;
-  }
-
-  int? _remainingStockPreview() {
-    final units = _parsedUnits();
-    if (selectedProduct == null || units == null || units <= 0) return null;
-    return _availableStock() - units;
-  }
-
-  String _discountModeLabel(DiscountMode mode) {
-    switch (mode) {
-      case DiscountMode.manual:
-        return "Manual";
-      case DiscountMode.soldPrice:
-        return "Sold Price";
-      case DiscountMode.percentage:
-        return "Percentage";
-    }
-  }
-
-  String _discountModeHint() {
-    switch (discountMode) {
-      case DiscountMode.manual:
-        return "Type the discount amount for each unit.";
-      case DiscountMode.soldPrice:
-        return "Enter the final amount the product was sold for per unit.";
-      case DiscountMode.percentage:
-        return "Enter 10 for a 10% discount on each unit.";
-    }
+    setState(() {
+      if (discount == null) {
+        discountController.clear();
+      } else {
+        discountController.text = _formatAmount(discount);
+      }
+    });
   }
 
   void _refreshPreview([String _ = '']) {
@@ -431,39 +290,115 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     }
   }
 
-  void _restoreForm() {
-    FocusScope.of(context).unfocus();
+  void _changeDiscountMode(DiscountMode mode) {
+    final currentDiscount = _resolveDiscount(showErrors: false);
 
-    if (_isEditing) {
-      setState(() {
-        _didLoadExistingSale = false;
-        _missingExistingProduct = false;
-        _showCostPrice = false;
-        _showProfitLoss = false;
-        selectedProductId = null;
-        selectedProduct = null;
-        discountMode = _defaultDiscountMode;
-        unitsController.clear();
-        discountController.clear();
-        soldPriceController.clear();
-        discountPercentController.clear();
-      });
-      _populateExistingSale();
-      return;
+    setState(() {
+      discountMode = mode;
+      if (mode == DiscountMode.manual) {
+        if (currentDiscount != null) {
+          discountController.text = _formatAmount(currentDiscount);
+        }
+      } else {
+        if (mode != DiscountMode.soldPrice) {
+          soldPriceController.clear();
+        }
+        if (mode != DiscountMode.percentage) {
+          discountPercentController.clear();
+        }
+      }
+    });
+
+    _syncCalculatedDiscount();
+  }
+
+  int? _remainingStockPreview() {
+    final units = _parsedUnits();
+    if (selectedProduct == null || units == null || units <= 0) return null;
+    return _availableStockForComposer() - units;
+  }
+
+  void _setComposerProduct(Map<String, dynamic>? product) {
+    selectedProduct = product;
+    selectedProductId = product == null ? null : product['id'] as int;
+    _composerCostPrice = product == null
+        ? null
+        : _asDouble(product['cost_price']);
+    _composerSellingPrice = product == null
+        ? null
+        : _asDouble(product['selling_price']);
+    productSearchController.text = product == null
+        ? ''
+        : product['name'].toString();
+  }
+
+  void _selectProduct(int? value) {
+    Map<String, dynamic>? nextProduct;
+    if (value != null) {
+      for (final product in products) {
+        if (product['id'] == value) {
+          nextProduct = product;
+          break;
+        }
+      }
     }
 
     setState(() {
       _showCostPrice = false;
       _showProfitLoss = false;
-      selectedProductId = null;
-      selectedProduct = null;
-      discountMode = _defaultDiscountMode;
-      unitsController.clear();
-      discountController.clear();
-      soldPriceController.clear();
-      discountPercentController.clear();
-      productSearchController.clear();
+      _setComposerProduct(nextProduct);
+      if (value != null) {
+        _missingExistingProduct = false;
+      }
     });
+
+    productSearchFocusNode.unfocus();
+    _syncCalculatedDiscount();
+  }
+
+  void _handleProductSearchChanged() {
+    if (!mounted) return;
+
+    final typedName = productSearchController.text.trim().toLowerCase();
+    final selectedName =
+        selectedProduct?['name']?.toString().trim().toLowerCase() ?? '';
+    final shouldClearSelection =
+        selectedProduct != null && typedName != selectedName;
+
+    if (shouldClearSelection) {
+      setState(() {
+        _showCostPrice = false;
+        _showProfitLoss = false;
+        _setComposerProduct(null);
+      });
+      _syncCalculatedDiscount();
+      return;
+    }
+
+    setState(() {});
+  }
+
+  List<DropdownMenuEntry<int>> get _productMenuEntries {
+    return products.map((product) {
+      return DropdownMenuEntry<int>(
+        value: product['id'] as int,
+        label: product['name'].toString(),
+      );
+    }).toList();
+  }
+
+  List<DropdownMenuEntry<int>> _filterProductEntries(
+    List<DropdownMenuEntry<int>> entries,
+    String filter,
+  ) {
+    final query = filter.trim().toLowerCase();
+    if (query.isEmpty) {
+      return entries;
+    }
+
+    return entries.where((entry) {
+      return entry.label.toLowerCase().contains(query);
+    }).toList();
   }
 
   Future<void> _toggleCostPriceVisibility() async {
@@ -540,13 +475,77 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     });
   }
 
-  Future<void> _saveSale() async {
-    if (selectedProduct == null) {
+  String _discountModeLabel(DiscountMode mode) {
+    switch (mode) {
+      case DiscountMode.manual:
+        return "Manual";
+      case DiscountMode.soldPrice:
+        return "Sold Price";
+      case DiscountMode.percentage:
+        return "Percentage";
+    }
+  }
+
+  String _discountModeHint() {
+    switch (discountMode) {
+      case DiscountMode.manual:
+        return "Type the discount amount for each unit.";
+      case DiscountMode.soldPrice:
+        return "Enter the final amount the product was sold for per unit.";
+      case DiscountMode.percentage:
+        return "Enter 10 for a 10% discount on each unit.";
+    }
+  }
+
+  void _clearComposer({bool keepCustomer = true}) {
+    FocusScope.of(context).unfocus();
+    _lineItemFormKey.currentState?.reset();
+    setState(() {
+      _editingItemIndex = null;
+      _showCostPrice = false;
+      _setComposerProduct(null);
+      discountMode = _defaultDiscountMode;
+      unitsController.clear();
+      discountController.clear();
+      soldPriceController.clear();
+      discountPercentController.clear();
+      if (!keepCustomer) {
+        customerNameController.clear();
+        customerPhoneController.clear();
+      }
+    });
+  }
+
+  void _restoreForm() {
+    FocusScope.of(context).unfocus();
+
+    if (_isEditing) {
+      setState(() {
+        _items = _originalItems.map((item) => item.copy()).toList();
+        customerNameController.text =
+            widget.existingSale?['customer_name']?.toString() ?? '';
+        customerPhoneController.text =
+            widget.existingSale?['customer_phone']?.toString() ?? '';
+      });
+      _clearComposer();
+      return;
+    }
+
+    setState(() {
+      _items = [];
+      customerNameController.clear();
+      customerPhoneController.clear();
+    });
+    _clearComposer(keepCustomer: false);
+  }
+
+  void _addOrUpdateCurrentItem() {
+    if (selectedProduct == null || selectedProductId == null) {
       _showMessage("Select a product first");
       return;
     }
 
-    final form = _formKey.currentState;
+    final form = _lineItemFormKey.currentState;
     if (form == null || !form.validate()) {
       return;
     }
@@ -567,20 +566,138 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       return;
     }
 
-    final availableStock = _availableStock();
+    final availableStock = _availableStockForComposer();
     if (units > availableStock) {
-      _showMessage("Not enough stock for this sale");
+      _showMessage("Not enough stock for this product");
       return;
     }
 
-    final soldPrice = sellingPrice - discount;
-    if (soldPrice < 0) {
-      _showMessage("Final price cannot be negative");
+    final duplicateIndex = _items.indexWhere(
+      (item) => item.productId == selectedProductId,
+    );
+    if (_editingItemIndex == null &&
+        duplicateIndex != -1 &&
+        duplicateIndex < _items.length) {
+      _showMessage("This product is already in the sale. Edit it instead.");
       return;
     }
 
-    final total = soldPrice * units;
-    final profit = (soldPrice - costPrice) * units;
+    final nextItem = _DraftSaleItem(
+      productId: selectedProductId!,
+      productName: selectedProduct!['name'].toString(),
+      units: units,
+      costPrice: costPrice,
+      sellingPrice: sellingPrice,
+      discount: discount,
+    );
+
+    setState(() {
+      if (_editingItemIndex != null) {
+        _items[_editingItemIndex!] = nextItem;
+      } else {
+        _items.add(nextItem);
+      }
+    });
+
+    _clearComposer();
+  }
+
+  void _editLineItem(int index) {
+    final item = _items[index];
+    Map<String, dynamic>? matchedProduct;
+    for (final product in products) {
+      if (product['id'] == item.productId) {
+        matchedProduct = product;
+        break;
+      }
+    }
+
+    if (matchedProduct == null) {
+      _showMessage(
+        "This product is no longer in inventory. Remove it or choose another product.",
+      );
+      return;
+    }
+
+    setState(() {
+      _editingItemIndex = index;
+      _showCostPrice = false;
+      _setComposerProduct(matchedProduct);
+      _composerCostPrice = item.costPrice;
+      _composerSellingPrice = item.sellingPrice;
+      unitsController.text = item.units.toString();
+      discountMode = DiscountMode.manual;
+      discountController.text = _formatAmount(item.discount);
+      soldPriceController.text = _formatAmount(item.soldPrice);
+      discountPercentController.text = item.sellingPrice > 0
+          ? _formatAmount((item.discount / item.sellingPrice) * 100)
+          : '';
+    });
+  }
+
+  void _removeLineItem(int index) {
+    setState(() {
+      _items.removeAt(index);
+      if (_editingItemIndex == index) {
+        _editingItemIndex = null;
+      } else if (_editingItemIndex != null && _editingItemIndex! > index) {
+        _editingItemIndex = _editingItemIndex! - 1;
+      }
+    });
+  }
+
+  double _cartSubtotal() {
+    var total = 0.0;
+    for (final item in _items) {
+      total += item.sellingPrice * item.units;
+    }
+    return total;
+  }
+
+  double _cartDiscountTotal() {
+    var total = 0.0;
+    for (final item in _items) {
+      total += item.totalDiscount;
+    }
+    return total;
+  }
+
+  double _cartNetTotal() {
+    var total = 0.0;
+    for (final item in _items) {
+      total += item.total;
+    }
+    return total;
+  }
+
+  double _cartProfit() {
+    var total = 0.0;
+    for (final item in _items) {
+      total += item.profit;
+    }
+    return total;
+  }
+
+  int _cartUnits() {
+    var total = 0;
+    for (final item in _items) {
+      total += item.units;
+    }
+    return total;
+  }
+
+  Future<void> _saveSale() async {
+    if (_items.isEmpty) {
+      _showMessage("Add at least one product to the sale");
+      return;
+    }
+
+    final customerPhone = customerPhoneController.text.trim();
+    if (customerPhone.isNotEmpty && customerPhone.length < 6) {
+      _showMessage("Enter a valid customer phone number");
+      return;
+    }
+
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
 
@@ -590,35 +707,20 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     });
 
     try {
+      final itemMaps = _items.map((item) => item.toMap()).toList();
       if (_isEditing) {
-        await DatabaseHelper.instance.updateSale(
-          saleId: widget.existingSale!['id'] as int,
-          productId: selectedProduct!['id'] as int,
-          units: units,
-          discount: discount,
-          total: total,
-          profit: profit,
-          costPrice: costPrice,
-          sellingPrice: sellingPrice,
+        await DatabaseHelper.instance.updateSaleOrder(
+          groupKey: _groupKey,
+          items: itemMaps,
+          customerName: customerNameController.text,
+          customerPhone: customerPhoneController.text,
         );
       } else {
-        final newStock = _asInt(selectedProduct!['stock']) - units;
-
-        await DatabaseHelper.instance.updateStock(
-          selectedProduct!['id'] as int,
-          newStock,
+        await DatabaseHelper.instance.createSaleOrder(
+          items: itemMaps,
+          customerName: customerNameController.text,
+          customerPhone: customerPhoneController.text,
         );
-
-        await DatabaseHelper.instance.insertSale({
-          'product_id': selectedProduct!['id'],
-          'units': units,
-          'discount': discount,
-          'total': total,
-          'profit': profit,
-          'cost_price': costPrice,
-          'selling_price': sellingPrice,
-          'date': DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now()),
-        });
       }
 
       if (!mounted) return;
@@ -676,8 +778,8 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                   const SizedBox(height: 4),
                   Text(
                     _isEditing
-                        ? "Edit the selected sale and keep the stock movement accurate."
-                        : "Choose a product, apply discount your way, and review the final numbers before saving.",
+                        ? "Edit multiple sale items, customer details, and totals in one place."
+                        : "Add one or more products to the sale, then save the full order together.",
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -732,9 +834,44 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                "The original product for this sale no longer exists. Choose another product to continue editing.",
+                "One or more products from this old sale no longer exist in inventory. You can still review the order, but replace or remove missing items before saving changes.",
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCustomerCard(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "Customer Details",
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Optional. Add a name or phone number to save this customer with the sale.",
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: customerNameController,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(labelText: "Customer Name"),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: customerPhoneController,
+              keyboardType: TextInputType.phone,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(labelText: "Phone Number"),
             ),
           ],
         ),
@@ -796,7 +933,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     );
   }
 
-  Widget _buildSaleDetailsCard(BuildContext context) {
+  Widget _buildCurrentItemCard(BuildContext context) {
     final sellingPrice = _selectedSellingPrice();
     final costPrice = _selectedCostPrice();
     final remainingStock = _remainingStockPreview();
@@ -809,92 +946,118 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "Sale Details",
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 14),
-            DropdownMenu<int>(
-              key: ValueKey(
-                '${selectedProductId ?? 'none'}|${products.length}',
-              ),
-              controller: productSearchController,
-              focusNode: productSearchFocusNode,
-              initialSelection: selectedProductId,
-              requestFocusOnTap: true,
-              enableFilter: true,
-              enableSearch: true,
-              menuHeight: 280,
-              width: double.infinity,
-              leadingIcon: const Icon(Icons.search_rounded),
-              label: const Text("Select Product"),
-              hintText: "Tap to search or browse products",
-              helperText: "Type a product name to filter the list.",
-              filterCallback: _filterProductEntries,
-              dropdownMenuEntries: _productMenuEntries,
-              onSelected: _selectProduct,
-            ),
-            if (selectedProduct != null) ...[
-              const SizedBox(height: 16),
-              _buildMetricTile(
-                context: context,
-                label: "Available Stock",
-                value: "${_availableStock()} units",
-                icon: Icons.inventory_2_outlined,
-                accentColor: const Color(0xFFFFB43A),
-              ),
-              const SizedBox(height: 12),
+        child: Form(
+          key: _lineItemFormKey,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Row(
                 children: [
                   Expanded(
-                    child: _buildMetricTile(
-                      context: context,
-                      label: "Selling Price",
-                      value: _formatCurrency(sellingPrice ?? 0),
-                      icon: Icons.sell_outlined,
-                      accentColor: const Color(0xFF5F95FF),
+                    child: Text(
+                      _editingItemIndex == null
+                          ? "Add Product to Sale"
+                          : "Edit Product in Sale",
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(child: _buildCostPriceTile(context, costPrice)),
+                  if (_editingItemIndex != null)
+                    TextButton.icon(
+                      onPressed: _clearComposer,
+                      icon: const Icon(Icons.close_rounded),
+                      label: const Text("Cancel Edit"),
+                    ),
                 ],
               ),
-              const SizedBox(height: 12),
-              _buildMetricTile(
-                context: context,
-                label: "Stock After Sale",
-                value: remainingStock == null
-                    ? "Enter units to preview"
-                    : "$remainingStock units",
-                icon: Icons.inventory_outlined,
-                accentColor: remainingColor,
+              const SizedBox(height: 8),
+              Text(
+                "Pick a product, apply discount, and add it to the running sale.",
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 14),
+              DropdownMenu<int>(
+                key: ValueKey(
+                  '${selectedProductId ?? 'none'}|${products.length}|${_editingItemIndex ?? 'new'}',
+                ),
+                controller: productSearchController,
+                focusNode: productSearchFocusNode,
+                initialSelection: selectedProductId,
+                requestFocusOnTap: true,
+                enableFilter: true,
+                enableSearch: true,
+                menuHeight: 280,
+                width: double.infinity,
+                leadingIcon: const Icon(Icons.search_rounded),
+                label: const Text("Select Product"),
+                hintText: "Tap to search or browse products",
+                helperText: "Type a product name to filter the list.",
+                filterCallback: _filterProductEntries,
+                dropdownMenuEntries: _productMenuEntries,
+                onSelected: _selectProduct,
+              ),
+              if (selectedProduct != null) ...[
+                const SizedBox(height: 16),
+                _buildMetricTile(
+                  context: context,
+                  label: "Available Stock",
+                  value: "${_availableStockForComposer()} units",
+                  icon: Icons.inventory_2_outlined,
+                  accentColor: const Color(0xFFFFB43A),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildMetricTile(
+                        context: context,
+                        label: "Selling Price",
+                        value: _formatCurrency(sellingPrice ?? 0),
+                        icon: Icons.sell_outlined,
+                        accentColor: const Color(0xFF5F95FF),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(child: _buildCostPriceTile(context, costPrice)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _buildMetricTile(
+                  context: context,
+                  label: "Stock After This Item",
+                  value: remainingStock == null
+                      ? "Enter units to preview"
+                      : "$remainingStock units",
+                  icon: Icons.inventory_outlined,
+                  accentColor: remainingColor,
+                ),
+              ],
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: unitsController,
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.next,
+                onChanged: _refreshPreview,
+                decoration: const InputDecoration(
+                  labelText: "Units Sold",
+                  helperText: "Enter how many units of this product were sold.",
+                ),
+                validator: (value) {
+                  final units = int.tryParse(value?.trim() ?? '');
+                  if (units == null) {
+                    return "Enter a whole number";
+                  }
+                  if (units <= 0) {
+                    return "Units must be greater than 0";
+                  }
+                  return null;
+                },
               ),
             ],
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: unitsController,
-              keyboardType: TextInputType.number,
-              textInputAction: TextInputAction.next,
-              onChanged: _refreshPreview,
-              decoration: const InputDecoration(
-                labelText: "Units Sold",
-                helperText: "Enter how many units were sold in this sale.",
-              ),
-              validator: (value) {
-                final units = int.tryParse(value?.trim() ?? '');
-                if (units == null) {
-                  return "Enter a whole number";
-                }
-                if (units <= 0) {
-                  return "Units must be greater than 0";
-                }
-                return null;
-              },
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -1021,6 +1184,23 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                 prefixText: "Rs ",
               ),
             ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _addOrUpdateCurrentItem,
+                icon: Icon(
+                  _editingItemIndex == null
+                      ? Icons.add_shopping_cart_rounded
+                      : Icons.check_rounded,
+                ),
+                label: Text(
+                  _editingItemIndex == null
+                      ? "Add Product to Sale"
+                      : "Update Product in Sale",
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -1048,40 +1228,90 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   }
 
   Widget _buildProtectedProfitLossRow(
-    BuildContext context, {
-    required double? profit,
+    BuildContext context,
+    double profit,
     Color? valueColor,
-  }) {
+  ) {
     return InkWell(
       onTap: _toggleProfitLossVisibility,
       borderRadius: BorderRadius.circular(12),
       child: _buildSummaryRow(
         context,
         _showProfitLoss ? "Profit / Loss" : "Profit / Loss Hidden",
-        _showProfitLoss ? _moneyOrPlaceholder(profit) : "Tap to show",
+        _showProfitLoss ? _formatCurrency(profit) : "Tap to show",
         valueColor: _showProfitLoss ? valueColor : null,
       ),
     );
   }
 
-  String _moneyOrPlaceholder(double? value) {
-    if (value == null) return "--";
-    return _formatCurrency(value);
-  }
-
-  String _stockOrPlaceholder(int? value) {
-    if (value == null) return "--";
-    return "$value units";
+  Widget _buildLineItemTile(
+    BuildContext context,
+    _DraftSaleItem item,
+    int index,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primary.withAlpha(10),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  item.productName,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: () => _editLineItem(index),
+                icon: const Icon(Icons.edit_outlined),
+                tooltip: "Edit item",
+              ),
+              IconButton(
+                onPressed: () => _removeLineItem(index),
+                icon: const Icon(Icons.delete_outline),
+                tooltip: "Remove item",
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _DetailChip(label: "Qty", value: "${item.units}"),
+              _DetailChip(
+                label: "Selling Price",
+                value: _formatCurrency(item.sellingPrice),
+              ),
+              _DetailChip(
+                label: "Discount",
+                value: _formatCurrency(item.discount),
+              ),
+              _DetailChip(
+                label: "Line Total",
+                value: _formatCurrency(item.total),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildSummaryCard(BuildContext context) {
-    final profit = _profitPreview();
-    final profitColor = profit == null
-        ? null
-        : profit < 0
+    final totalProfit = _cartProfit();
+    final profitColor = totalProfit < 0
         ? Theme.of(context).colorScheme.error
         : Theme.of(context).colorScheme.secondary;
-    final soldPrice = _soldPricePreview();
 
     return Card(
       child: Padding(
@@ -1095,39 +1325,53 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              "These values update live as you edit the sale.",
+              _items.isEmpty
+                  ? "Add products to build the sale summary."
+                  : "Review the products, discounts, and final amount before saving.",
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 16),
+            if (_items.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary.withAlpha(10),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Text(
+                  "No products added yet.",
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              )
+            else
+              ...List.generate(_items.length, (index) {
+                return _buildLineItemTile(context, _items[index], index);
+              }),
+            const Divider(height: 24),
+            _buildSummaryRow(
+              context,
+              "Products in Sale",
+              "${_items.length} item${_items.length == 1 ? '' : 's'}",
+            ),
+            _buildSummaryRow(context, "Total Units", "${_cartUnits()} units"),
             _buildSummaryRow(
               context,
               "Regular Total",
-              _moneyOrPlaceholder(_grossTotalPreview()),
+              _formatCurrency(_cartSubtotal()),
             ),
             _buildSummaryRow(
               context,
               "Total Discount",
-              _moneyOrPlaceholder(_totalDiscountPreview()),
+              _formatCurrency(_cartDiscountTotal()),
             ),
+            _buildProtectedProfitLossRow(context, totalProfit, profitColor),
+            const SizedBox(height: 6),
             _buildSummaryRow(
               context,
-              "Sold Price per Unit",
-              _moneyOrPlaceholder(soldPrice),
-            ),
-            _buildSummaryRow(
-              context,
-              "Net Sale Amount",
-              _moneyOrPlaceholder(_netTotalPreview()),
-            ),
-            _buildProtectedProfitLossRow(
-              context,
-              profit: profit,
-              valueColor: profitColor,
-            ),
-            _buildSummaryRow(
-              context,
-              "Remaining Stock",
-              _stockOrPlaceholder(_remainingStockPreview()),
+              "Amount to Pay",
+              _formatCurrency(_cartNetTotal()),
+              valueColor: Theme.of(context).colorScheme.primary,
             ),
           ],
         ),
@@ -1160,7 +1404,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
           child: OutlinedButton.icon(
             onPressed: _isSaving ? null : _restoreForm,
             icon: const Icon(Icons.refresh_rounded),
-            label: Text(_isEditing ? "Restore Original Values" : "Clear Form"),
+            label: Text(_isEditing ? "Restore Original Values" : "Clear Sale"),
           ),
         ),
       ],
@@ -1173,32 +1417,130 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
 
     return Scaffold(
       appBar: AppBar(title: Text(_isEditing ? "Edit Sale" : "Record Sale")),
-      body: Form(
-        key: _formKey,
-        autovalidateMode: AutovalidateMode.onUserInteraction,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _buildIntroCard(context),
-            if (!hasProducts && !_isEditing) ...[
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _buildIntroCard(context),
+          if (!hasProducts && !_isEditing) ...[
+            const SizedBox(height: 16),
+            _buildEmptyStateCard(context),
+          ] else ...[
+            if (_missingExistingProduct) ...[
               const SizedBox(height: 16),
-              _buildEmptyStateCard(context),
-            ] else ...[
-              if (_missingExistingProduct) ...[
-                const SizedBox(height: 16),
-                _buildMissingProductCard(context),
-              ],
-              const SizedBox(height: 16),
-              _buildSaleDetailsCard(context),
-              const SizedBox(height: 16),
-              _buildDiscountCard(context),
-              const SizedBox(height: 16),
-              _buildSummaryCard(context),
-              const SizedBox(height: 16),
-              _buildActionButtons(context),
+              _buildMissingProductCard(context),
             ],
+            const SizedBox(height: 16),
+            _buildCustomerCard(context),
+            const SizedBox(height: 16),
+            _buildCurrentItemCard(context),
+            const SizedBox(height: 16),
+            _buildDiscountCard(context),
+            const SizedBox(height: 16),
+            _buildSummaryCard(context),
+            const SizedBox(height: 16),
+            _buildActionButtons(context),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DraftSaleItem {
+  const _DraftSaleItem({
+    required this.productId,
+    required this.productName,
+    required this.units,
+    required this.costPrice,
+    required this.sellingPrice,
+    required this.discount,
+  });
+
+  final int productId;
+  final String productName;
+  final int units;
+  final double costPrice;
+  final double sellingPrice;
+  final double discount;
+
+  double get soldPrice => sellingPrice - discount;
+
+  double get totalDiscount => discount * units;
+
+  double get total => soldPrice * units;
+
+  double get profit => (soldPrice - costPrice) * units;
+
+  _DraftSaleItem copy() {
+    return _DraftSaleItem(
+      productId: productId,
+      productName: productName,
+      units: units,
+      costPrice: costPrice,
+      sellingPrice: sellingPrice,
+      discount: discount,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'product_id': productId,
+      'product_name': productName,
+      'units': units,
+      'discount': discount,
+      'total': total,
+      'profit': profit,
+      'cost_price': costPrice,
+      'selling_price': sellingPrice,
+    };
+  }
+
+  factory _DraftSaleItem.fromMap(Map<String, dynamic> map) {
+    double asDouble(dynamic value) {
+      if (value is num) return value.toDouble();
+      return double.tryParse(value?.toString() ?? '') ?? 0;
+    }
+
+    int asInt(dynamic value) {
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      return int.tryParse(value?.toString() ?? '') ?? 0;
+    }
+
+    return _DraftSaleItem(
+      productId: asInt(map['product_id']),
+      productName:
+          map['product_name']?.toString() ?? map['name']?.toString() ?? '',
+      units: asInt(map['units']),
+      costPrice: asDouble(map['cost_price']),
+      sellingPrice: asDouble(map['selling_price']),
+      discount: asDouble(map['discount']),
+    );
+  }
+}
+
+class _DetailChip extends StatelessWidget {
+  const _DetailChip({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface.withAlpha(120),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline.withAlpha(40),
         ),
+      ),
+      child: Text(
+        "$label: $value",
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
       ),
     );
   }

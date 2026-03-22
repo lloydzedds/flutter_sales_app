@@ -61,7 +61,13 @@ class HowToUseScreen extends StatelessWidget {
             icon: Icons.shopping_cart_checkout_rounded,
             title: "Record Sales",
             description:
-                "Use Record Sale or New Order to select a product, enter units sold, and apply discount by amount, sold price, or percentage.",
+                "Use Record Sale or New Order to add one or more products, apply discount by amount, sold price, or percentage, and optionally save the customer name and phone number with the sale.",
+          ),
+          _stepCard(
+            icon: Icons.people_alt_outlined,
+            title: "Customers",
+            description:
+                "Open Customers to search saved customers by name or phone number and review their purchase history.",
           ),
           _stepCard(
             icon: Icons.inventory_2_outlined,
@@ -73,7 +79,7 @@ class HowToUseScreen extends StatelessWidget {
             icon: Icons.history_rounded,
             title: "Sales History",
             description:
-                "Sales History lets you filter by date, check profit or loss, open sale details, edit old sales, or delete a sale.",
+                "Sales History lets you filter by date, review full orders, open sale details, edit old sales, delete a sale, export CSV, and share bill PDFs for past purchases.",
           ),
           _stepCard(
             icon: Icons.settings_outlined,

@@ -1,0 +1,415 @@
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+
+import '../database/database_helper.dart';
+import '../services/sale_bill_service.dart';
+import 'add_sale_screen.dart';
+
+class CustomerHistoryScreen extends StatefulWidget {
+  const CustomerHistoryScreen({super.key, required this.customer});
+
+  final Map<String, dynamic> customer;
+
+  @override
+  State<CustomerHistoryScreen> createState() => _CustomerHistoryScreenState();
+}
+
+class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
+  List<Map<String, dynamic>> _orders = [];
+  bool _isLoading = true;
+  bool _isBusy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOrders();
+  }
+
+  double _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  int _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  String _formatAmount(dynamic value) {
+    final amount = _asDouble(value);
+    if (amount == amount.roundToDouble()) {
+      return amount.toStringAsFixed(0);
+    }
+    return amount.toStringAsFixed(2);
+  }
+
+  String _formatCurrency(dynamic value) {
+    return "Rs ${_formatAmount(value)}";
+  }
+
+  String _formatResultValue(double value) {
+    return _formatCurrency(value.abs());
+  }
+
+  String _resultLabel(double value) {
+    return value < 0 ? "Loss" : "Profit";
+  }
+
+  DateTime? _parseOrderDate(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      return DateFormat('yyyy-MM-dd HH:mm').parseStrict(raw);
+    } catch (_) {
+      return DateTime.tryParse(raw);
+    }
+  }
+
+  String _formatTime(DateTime? date) {
+    if (date == null) return "--";
+    return DateFormat('d MMM yyyy, h:mm a').format(date);
+  }
+
+  Future<void> _loadOrders() async {
+    final rows = await DatabaseHelper.instance.getCustomerSaleOrders(
+      _asInt(widget.customer['id']),
+    );
+    if (!mounted) return;
+    setState(() {
+      _orders = rows;
+      _isLoading = false;
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> _loadOrderItems(
+    Map<String, dynamic> order,
+  ) {
+    final groupKey = order['group_key']?.toString() ?? 'legacy-${order['id']}';
+    return DatabaseHelper.instance.getSaleItemsForGroupKey(groupKey);
+  }
+
+  Future<void> _shareBill(Map<String, dynamic> order) async {
+    setState(() {
+      _isBusy = true;
+    });
+    try {
+      final items = await _loadOrderItems(order);
+      if (items.isEmpty) return;
+      await SaleBillService.sharePdfBill(order: order, items: items);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isBusy = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _showOrderDetails(Map<String, dynamic> order) async {
+    final items = await _loadOrderItems(order);
+    if (!mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  order['bill_number']?.toString().trim().isNotEmpty == true
+                      ? order['bill_number'].toString().trim()
+                      : 'Sale #${order['id']}',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _formatTime(_parseOrderDate(order['date']?.toString())),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 14),
+                ...items.map((item) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.primary.withAlpha(10),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item['product_name']?.toString() ??
+                              item['name']?.toString() ??
+                              'Product',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          "Qty ${_asInt(item['units'])} • SP ${_formatCurrency(item['selling_price'])} • Discount ${_formatCurrency(item['discount'])} • Total ${_formatCurrency(item['total'])}",
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      Navigator.of(sheetContext).pop();
+                      await _shareBill(order);
+                    },
+                    icon: const Icon(Icons.picture_as_pdf_outlined),
+                    label: const Text("Share Bill PDF"),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _editOrder(Map<String, dynamic> order) async {
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => AddSaleScreen(existingSale: order)),
+    );
+    if (!mounted || updated != true) return;
+    await _loadOrders();
+  }
+
+  Widget _buildOrderCard(Map<String, dynamic> order) {
+    final profit = _asDouble(order['profit']);
+    final resultColor = profit < 0
+        ? Theme.of(context).colorScheme.error
+        : Theme.of(context).colorScheme.secondary;
+    final productPreview =
+        order['product_names']?.toString().trim().isNotEmpty == true
+        ? order['product_names'].toString().trim()
+        : 'Products not available';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Theme.of(context).colorScheme.outline),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () => _showOrderDetails(order),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      order['bill_number']?.toString().trim().isNotEmpty == true
+                          ? order['bill_number'].toString().trim()
+                          : 'Sale #${order['id']}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    _formatCurrency(order['total']),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _formatTime(_parseOrderDate(order['date']?.toString())),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 10),
+              Text(productPreview),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _CustomerOrderChip(
+                    label: "Items",
+                    value: "${_asInt(order['item_count'])}",
+                  ),
+                  _CustomerOrderChip(
+                    label: "Units",
+                    value: "${_asInt(order['total_units'])}",
+                  ),
+                  _CustomerOrderChip(
+                    label: _resultLabel(profit),
+                    value: _formatResultValue(profit),
+                    valueColor: resultColor,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _showOrderDetails(order),
+                      icon: const Icon(Icons.info_outline),
+                      label: const Text("Details"),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _editOrder(order),
+                      icon: const Icon(Icons.edit_outlined),
+                      label: const Text("Edit"),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => _shareBill(order),
+                      icon: const Icon(Icons.picture_as_pdf_outlined),
+                      label: const Text("Bill"),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final totalSpent = _orders.fold<double>(
+      0,
+      (sum, order) => sum + _asDouble(order['total']),
+    );
+
+    return Scaffold(
+      appBar: AppBar(title: const Text("Customer History")),
+      body: RefreshIndicator(
+        onRefresh: _loadOrders,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.customer['name']?.toString().trim().isNotEmpty ==
+                              true
+                          ? widget.customer['name'].toString().trim()
+                          : 'Unnamed Customer',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      widget.customer['phone']?.toString().trim().isNotEmpty ==
+                              true
+                          ? widget.customer['phone'].toString().trim()
+                          : 'Phone not saved',
+                    ),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        _CustomerOrderChip(
+                          label: "Orders",
+                          value: "${_orders.length}",
+                        ),
+                        _CustomerOrderChip(
+                          label: "Total Spent",
+                          value: _formatCurrency(totalSpent),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (_isLoading)
+              const Center(child: CircularProgressIndicator())
+            else if (_orders.isEmpty)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Text(
+                    "No purchases found for this customer yet.",
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+              )
+            else
+              ..._orders.map(_buildOrderCard),
+            if (_isBusy) ...[
+              const SizedBox(height: 12),
+              const LinearProgressIndicator(),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CustomerOrderChip extends StatelessWidget {
+  const _CustomerOrderChip({
+    required this.label,
+    required this.value,
+    this.valueColor,
+  });
+
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primary.withAlpha(10),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        "$label: $value",
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          fontWeight: FontWeight.w600,
+          color: valueColor,
+        ),
+      ),
+    );
+  }
+}

@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../database/database_helper.dart';
+import '../services/sale_bill_service.dart';
 import 'add_sale_screen.dart';
 
 enum _CsvExportScope { customDates, pastMonth, everything }
@@ -20,7 +21,7 @@ class SalesHistoryScreen extends StatefulWidget {
 }
 
 class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
-  List<Map<String, dynamic>> sales = [];
+  List<Map<String, dynamic>> orders = [];
   List<Map<String, dynamic>> revenueData = [];
   DateTime? selectedDate;
   double todayRevenue = 0;
@@ -32,7 +33,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   @override
   void initState() {
     super.initState();
-    loadSales();
+    loadOrders();
   }
 
   Map<String, String> _dateRange(DateTime date) {
@@ -41,10 +42,14 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   }
 
   double _asDouble(dynamic value) {
-    if (value is num) {
-      return value.toDouble();
-    }
+    if (value is num) return value.toDouble();
     return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  int _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
   String _formatAmount(dynamic value) {
@@ -67,9 +72,8 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     return value < 0 ? "Loss" : "Profit";
   }
 
-  DateTime? _parseSaleDate(String? raw) {
+  DateTime? _parseOrderDate(String? raw) {
     if (raw == null || raw.isEmpty) return null;
-
     try {
       return DateFormat('yyyy-MM-dd HH:mm').parseStrict(raw);
     } catch (_) {
@@ -79,7 +83,6 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
 
   DateTime? _parseDay(String? raw) {
     if (raw == null || raw.isEmpty) return null;
-
     try {
       return DateFormat('yyyy-MM-dd').parseStrict(raw);
     } catch (_) {
@@ -101,29 +104,26 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   }
 
   String _activeFilterLabel() {
-    if (selectedDate == null) {
-      return "All dates";
-    }
+    if (selectedDate == null) return "All dates";
     return _formatShortDate(selectedDate!);
   }
 
   String _overviewSubtitle() {
     if (selectedDate == null) {
-      return "Showing the complete sales history";
+      return "Showing the complete order history";
     }
-    return "Showing only sales from ${_formatSectionDate(selectedDate!)}";
+    return "Showing only orders from ${_formatSectionDate(selectedDate!)}";
   }
 
   Map<String, dynamic> _visibleSummary() {
     double revenue = 0;
     double profit = 0;
-
-    for (final sale in sales) {
-      revenue += _asDouble(sale['total']);
-      profit += _asDouble(sale['profit']);
+    for (final order in orders) {
+      revenue += _asDouble(order['total']);
+      profit += _asDouble(order['profit']);
     }
 
-    return {'sales': sales.length, 'revenue': revenue, 'profit': profit};
+    return {'sales': orders.length, 'revenue': revenue, 'profit': profit};
   }
 
   List<Map<String, dynamic>> _chartSeries() {
@@ -134,31 +134,31 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     return revenueData.sublist(revenueData.length - maxPoints);
   }
 
-  List<_SalesSection> _groupedSales() {
+  List<_OrderSection> _groupedOrders() {
     final grouped = <String, List<Map<String, dynamic>>>{};
 
-    for (final sale in sales) {
+    for (final order in orders) {
       final date =
-          _parseSaleDate(sale['date']?.toString()) ?? DateTime(1970, 1, 1);
+          _parseOrderDate(order['date']?.toString()) ?? DateTime(1970, 1, 1);
       final key = DateFormat('yyyy-MM-dd').format(date);
-      grouped.putIfAbsent(key, () => []).add(sale);
+      grouped.putIfAbsent(key, () => []).add(order);
     }
 
-    return grouped.values.map((sectionSales) {
+    return grouped.values.map((sectionOrders) {
       final firstDate =
-          _parseSaleDate(sectionSales.first['date']?.toString()) ??
+          _parseOrderDate(sectionOrders.first['date']?.toString()) ??
           DateTime(1970, 1, 1);
       double revenue = 0;
       double profit = 0;
 
-      for (final sale in sectionSales) {
-        revenue += _asDouble(sale['total']);
-        profit += _asDouble(sale['profit']);
+      for (final order in sectionOrders) {
+        revenue += _asDouble(order['total']);
+        profit += _asDouble(order['profit']);
       }
 
-      return _SalesSection(
+      return _OrderSection(
         date: firstDate,
-        sales: sectionSales,
+        orders: sectionOrders,
         revenue: revenue,
         profit: profit,
       );
@@ -182,23 +182,23 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> loadSales({DateTime? filterDate}) async {
+  Future<void> loadOrders({DateTime? filterDate}) async {
     if (mounted) {
       setState(() {
         _isLoading = true;
       });
     }
 
-    final salesFuture = filterDate == null
-        ? DatabaseHelper.instance.getSalesWithProduct()
-        : DatabaseHelper.instance.getSalesByDateRange(
+    final ordersFuture = filterDate == null
+        ? DatabaseHelper.instance.getSaleOrders()
+        : DatabaseHelper.instance.getSaleOrdersByDateRange(
             _dateRange(filterDate)['start']!,
             _dateRange(filterDate)['end']!,
           );
     final graphFuture = DatabaseHelper.instance.getDailyRevenue();
     final summaryFuture = DatabaseHelper.instance.getTodaySummary();
 
-    final data = await salesFuture;
+    final orderRows = await ordersFuture;
     final graph = await graphFuture;
     final summary = await summaryFuture;
 
@@ -206,11 +206,11 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
 
     setState(() {
       selectedDate = filterDate;
-      sales = data;
+      orders = orderRows;
       revenueData = graph;
       todayRevenue = _asDouble(summary['total_revenue']);
       todayProfit = _asDouble(summary['total_profit']);
-      todaySales = (summary['total_sales'] as num? ?? 0).toInt();
+      todaySales = _asInt(summary['total_sales']);
       _isLoading = false;
     });
   }
@@ -221,24 +221,14 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
       initialDate: selectedDate ?? DateTime.now(),
       firstDate: DateTime(2023),
       lastDate: DateTime(2100),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: Theme.of(context).colorScheme.copyWith(
-              primary: Theme.of(context).colorScheme.primary,
-            ),
-          ),
-          child: child!,
-        );
-      },
     );
 
     if (picked == null) return;
-    await loadSales(filterDate: picked);
+    await loadOrders(filterDate: picked);
   }
 
   Future<void> clearDateFilter() async {
-    await loadSales();
+    await loadOrders();
   }
 
   Future<_CsvExportScope?> _pickExportScope() async {
@@ -263,14 +253,14 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
               ListTile(
                 leading: const Icon(Icons.calendar_month_outlined),
                 title: const Text("Past Month"),
-                subtitle: const Text("Export the last 30 days of sales"),
+                subtitle: const Text("Export the last 30 days of orders"),
                 onTap: () =>
                     Navigator.of(sheetContext).pop(_CsvExportScope.pastMonth),
               ),
               ListTile(
                 leading: const Icon(Icons.storage_outlined),
                 title: const Text("Everything"),
-                subtitle: const Text("Export all past sales data"),
+                subtitle: const Text("Export all past order data"),
                 onTap: () =>
                     Navigator.of(sheetContext).pop(_CsvExportScope.everything),
               ),
@@ -290,16 +280,6 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
       ),
       firstDate: DateTime(2023),
       lastDate: DateTime(2100),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: Theme.of(context).colorScheme.copyWith(
-              primary: Theme.of(context).colorScheme.primary,
-            ),
-          ),
-          child: child!,
-        );
-      },
     );
   }
 
@@ -307,17 +287,16 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     final scope = await _pickExportScope();
     if (scope == null) return;
 
-    List<Map<String, dynamic>> exportSales;
+    List<Map<String, dynamic>> exportRows;
     String exportLabel;
 
     switch (scope) {
       case _CsvExportScope.customDates:
         final range = await _pickExportDateRange();
         if (range == null) return;
-
-        exportSales = await DatabaseHelper.instance.getSalesByDateRange(
-          "${DateFormat('yyyy-MM-dd').format(range.start)} 00:00",
-          "${DateFormat('yyyy-MM-dd').format(range.end)} 23:59",
+        exportRows = await DatabaseHelper.instance.getSaleItemsForExport(
+          startDate: "${DateFormat('yyyy-MM-dd').format(range.start)} 00:00",
+          endDate: "${DateFormat('yyyy-MM-dd').format(range.end)} 23:59",
         );
         exportLabel =
             "${DateFormat('yyyyMMdd').format(range.start)}_${DateFormat('yyyyMMdd').format(range.end)}";
@@ -325,19 +304,19 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
       case _CsvExportScope.pastMonth:
         final end = DateTime.now();
         final start = end.subtract(const Duration(days: 29));
-        exportSales = await DatabaseHelper.instance.getSalesByDateRange(
-          "${DateFormat('yyyy-MM-dd').format(start)} 00:00",
-          "${DateFormat('yyyy-MM-dd').format(end)} 23:59",
+        exportRows = await DatabaseHelper.instance.getSaleItemsForExport(
+          startDate: "${DateFormat('yyyy-MM-dd').format(start)} 00:00",
+          endDate: "${DateFormat('yyyy-MM-dd').format(end)} 23:59",
         );
         exportLabel = "past_month";
         break;
       case _CsvExportScope.everything:
-        exportSales = await DatabaseHelper.instance.getSalesWithProduct();
+        exportRows = await DatabaseHelper.instance.getSaleItemsForExport();
         exportLabel = "all_data";
         break;
     }
 
-    if (exportSales.isEmpty) {
+    if (exportRows.isEmpty) {
       _showMessage("No sales found for the selected export range");
       return;
     }
@@ -348,26 +327,22 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
 
     try {
       final csv = StringBuffer(
-        "Product,Units,Cost Price,Selling Price,Sold Price,Discount,Total,Profit Or Loss,Date\n",
+        "Bill No,Customer,Phone,Product,Units,Selling Price,Discount,Total,Profit,Date\n",
       );
 
-      for (final sale in exportSales) {
-        final profit = _asDouble(sale['profit']);
-        final soldPrice = sale['sold_price'] == null
-            ? _asDouble(sale['selling_price']) - _asDouble(sale['discount'])
-            : _asDouble(sale['sold_price']);
-
+      for (final row in exportRows) {
         csv.writeln(
           [
-            _csvCell(sale['name']),
-            _csvCell(sale['units']),
-            _csvCell(_formatAmount(sale['cost_price'])),
-            _csvCell(_formatAmount(sale['selling_price'])),
-            _csvCell(_formatAmount(soldPrice)),
-            _csvCell(_formatAmount(sale['discount'])),
-            _csvCell(_formatAmount(sale['total'])),
-            _csvCell(_formatAmount(profit)),
-            _csvCell(sale['date']),
+            _csvCell(row['bill_number']),
+            _csvCell(row['customer_name']),
+            _csvCell(row['customer_phone']),
+            _csvCell(row['product_name']),
+            _csvCell(row['units']),
+            _csvCell(_formatAmount(row['selling_price'])),
+            _csvCell(_formatAmount(row['discount'])),
+            _csvCell(_formatAmount(row['total'])),
+            _csvCell(_formatAmount(row['profit'])),
+            _csvCell(row['date']),
           ].join(','),
         );
       }
@@ -407,7 +382,6 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
       final backupPath = "${directory.path}/$fileName";
 
       final backupFile = await DatabaseHelper.instance.createBackup(backupPath);
-
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(backupFile.path)],
@@ -431,7 +405,6 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
       type: FileType.custom,
       allowedExtensions: ['db'],
     );
-
     if (result == null) return;
 
     final selectedPath = result.files.single.path;
@@ -443,8 +416,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
 
     try {
       await DatabaseHelper.instance.restoreDatabaseFromFile(selectedPath);
-      await loadSales(filterDate: selectedDate);
-
+      await loadOrders(filterDate: selectedDate);
       if (!mounted) return;
       _showMessage("Backup restored and history refreshed");
     } finally {
@@ -456,37 +428,63 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     }
   }
 
-  Future<void> deleteSale(int saleId) async {
-    await DatabaseHelper.instance.deleteSale(saleId);
+  Future<List<Map<String, dynamic>>> _loadOrderItems(
+    Map<String, dynamic> order,
+  ) async {
+    final groupKey = order['group_key']?.toString() ?? 'legacy-${order['id']}';
+    return DatabaseHelper.instance.getSaleItemsForGroupKey(groupKey);
+  }
+
+  Future<void> _shareBill(Map<String, dynamic> order) async {
+    setState(() {
+      _isBusy = true;
+    });
+
+    try {
+      final items = await _loadOrderItems(order);
+      if (items.isEmpty) {
+        _showMessage("Could not find sale items for this bill");
+        return;
+      }
+      await SaleBillService.sharePdfBill(order: order, items: items);
+      if (!mounted) return;
+      _showMessage("Bill ready to share");
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isBusy = false;
+        });
+      }
+    }
+  }
+
+  Future<void> deleteOrder(Map<String, dynamic> order) async {
+    final groupKey = order['group_key']?.toString() ?? 'legacy-${order['id']}';
+    await DatabaseHelper.instance.deleteSaleOrder(groupKey);
     if (!mounted) return;
 
-    await loadSales(filterDate: selectedDate);
+    await loadOrders(filterDate: selectedDate);
     if (!mounted) return;
 
     _showMessage("Sale deleted");
   }
 
-  Future<void> _editSale(Map<String, dynamic> sale) async {
+  Future<void> _editSale(Map<String, dynamic> order) async {
     final updated = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => AddSaleScreen(existingSale: sale)),
+      MaterialPageRoute(builder: (_) => AddSaleScreen(existingSale: order)),
     );
-
     if (!mounted || updated != true) return;
 
-    await loadSales(filterDate: selectedDate);
+    await loadOrders(filterDate: selectedDate);
     if (!mounted) return;
-
     _showMessage("Sale updated");
   }
 
-  Future<void> _showSaleDetails(Map<String, dynamic> sale) async {
-    final profit = _asDouble(sale['profit']);
-    final sellingPrice = _asDouble(sale['selling_price']);
-    final costPrice = _asDouble(sale['cost_price']);
-    final discount = _asDouble(sale['discount']);
-    final soldPrice = sale['sold_price'] == null
-        ? sellingPrice - discount
-        : _asDouble(sale['sold_price']);
+  Future<void> _showOrderDetails(Map<String, dynamic> order) async {
+    final items = await _loadOrderItems(order);
+    if (!mounted) return;
+
+    final profit = _asDouble(order['profit']);
     final colorScheme = Theme.of(context).colorScheme;
 
     await showModalBottomSheet<void>(
@@ -504,7 +502,9 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  sale['name']?.toString() ?? 'Sale Details',
+                  order['bill_number']?.toString().trim().isNotEmpty == true
+                      ? order['bill_number'].toString().trim()
+                      : 'Sale #${order['id']}',
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
@@ -512,19 +512,28 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  sale['date']?.toString() ?? '--',
+                  order['date']?.toString() ?? '--',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 14),
                 _buildDetailRow(
-                  "Units Sold",
-                  sale['units']?.toString() ?? '--',
+                  "Customer",
+                  order['customer_name']?.toString().trim().isNotEmpty == true
+                      ? order['customer_name'].toString().trim()
+                      : 'Walk-in Customer',
                 ),
-                _buildDetailRow("Selling Price", _formatCurrency(sellingPrice)),
-                _buildDetailRow("Sold Price", _formatCurrency(soldPrice)),
-                _buildDetailRow("Cost Price", _formatCurrency(costPrice)),
-                _buildDetailRow("Discount", _formatCurrency(discount)),
-                _buildDetailRow("Total", _formatCurrency(sale['total'])),
+                if (order['customer_phone']?.toString().trim().isNotEmpty ==
+                    true)
+                  _buildDetailRow("Phone", order['customer_phone'].toString()),
+                _buildDetailRow(
+                  "Products",
+                  "${_asInt(order['item_count'])} item(s)",
+                ),
+                _buildDetailRow(
+                  "Units",
+                  "${_asInt(order['total_units'])} units",
+                ),
+                _buildDetailRow("Total", _formatCurrency(order['total'])),
                 _buildDetailRow(
                   _resultLabel(profit),
                   _formatResultValue(profit),
@@ -533,6 +542,68 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                       : colorScheme.secondary,
                 ),
                 const SizedBox(height: 16),
+                const Text(
+                  "Products",
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                ),
+                const SizedBox(height: 10),
+                ...items.map((item) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary.withAlpha(10),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item['product_name']?.toString() ??
+                              item['name']?.toString() ??
+                              'Product',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _OrderChip(
+                              label: "Qty",
+                              value: "${_asInt(item['units'])}",
+                            ),
+                            _OrderChip(
+                              label: "SP",
+                              value: _formatCurrency(item['selling_price']),
+                            ),
+                            _OrderChip(
+                              label: "Discount",
+                              value: _formatCurrency(item['discount']),
+                            ),
+                            _OrderChip(
+                              label: "Total",
+                              value: _formatCurrency(item['total']),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      Navigator.of(sheetContext).pop();
+                      await _shareBill(order);
+                    },
+                    icon: const Icon(Icons.picture_as_pdf_outlined),
+                    label: const Text("Share Bill PDF"),
+                  ),
+                ),
+                const SizedBox(height: 10),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
@@ -548,14 +619,14 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     );
   }
 
-  Future<bool> _confirmDeleteSale(Map<String, dynamic> sale) async {
+  Future<bool> _confirmDeleteSale(Map<String, dynamic> order) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
           title: const Text("Delete Sale"),
           content: Text(
-            "Delete the sale for ${sale['name']?.toString() ?? 'this product'}?",
+            "Delete ${order['bill_number']?.toString().trim().isNotEmpty == true ? order['bill_number'].toString().trim() : 'this sale'}?",
           ),
           actions: [
             TextButton(
@@ -574,7 +645,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     return confirmed ?? false;
   }
 
-  Future<void> _handleSaleLongPress(Map<String, dynamic> sale) async {
+  Future<void> _handleSaleLongPress(Map<String, dynamic> order) async {
     final action = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -590,6 +661,11 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                 leading: const Icon(Icons.info_outline),
                 title: const Text("Show details"),
                 onTap: () => Navigator.of(sheetContext).pop('details'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.picture_as_pdf_outlined),
+                title: const Text("Share bill"),
+                onTap: () => Navigator.of(sheetContext).pop('bill'),
               ),
               ListTile(
                 leading: const Icon(Icons.edit_outlined),
@@ -613,15 +689,18 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
 
     switch (action) {
       case 'details':
-        await _showSaleDetails(sale);
+        await _showOrderDetails(order);
+        return;
+      case 'bill':
+        await _shareBill(order);
         return;
       case 'edit':
-        await _editSale(sale);
+        await _editSale(order);
         return;
       case 'delete':
-        final confirmed = await _confirmDeleteSale(sale);
+        final confirmed = await _confirmDeleteSale(order);
         if (!confirmed) return;
-        await deleteSale(sale['id'] as int);
+        await deleteOrder(order);
         return;
     }
   }
@@ -662,7 +741,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                     ],
                   ),
                 ),
-                ?trailing,
+                if (trailing != null) ...[const SizedBox(width: 12), trailing],
               ],
             ),
             const SizedBox(height: 16),
@@ -671,6 +750,22 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildToolButton({
+    required VoidCallback onPressed,
+    required IconData icon,
+    required String label,
+    bool filled = false,
+  }) {
+    final child = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [Icon(icon, size: 18), const SizedBox(width: 8), Text(label)],
+    );
+
+    return filled
+        ? ElevatedButton(onPressed: onPressed, child: child)
+        : OutlinedButton(onPressed: onPressed, child: child);
   }
 
   Widget _buildMetricCard({
@@ -683,83 +778,24 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withAlpha(18),
-        borderRadius: BorderRadius.circular(20),
+        color: color.withAlpha(16),
+        borderRadius: BorderRadius.circular(18),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  label,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-                ),
-              ),
-              Icon(icon, color: color, size: 20),
-            ],
-          ),
+          Icon(icon, color: color),
           const Spacer(),
+          Text(label, style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 4),
           Text(
             value,
             style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
           ),
           if (caption != null) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             Text(caption, style: Theme.of(context).textTheme.bodySmall),
           ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildToolButton({
-    required VoidCallback onPressed,
-    required IconData icon,
-    required String label,
-    bool filled = false,
-  }) {
-    final child = Text(label);
-    if (filled) {
-      return ElevatedButton.icon(
-        onPressed: _isBusy ? null : onPressed,
-        icon: Icon(icon),
-        label: child,
-      );
-    }
-
-    return OutlinedButton.icon(
-      onPressed: _isBusy ? null : onPressed,
-      icon: Icon(icon),
-      label: child,
-    );
-  }
-
-  Widget _buildInfoPill({
-    required IconData icon,
-    required String label,
-    required String value,
-  }) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: colorScheme.primary.withAlpha(16),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: colorScheme.primary),
-          const SizedBox(width: 6),
-          Text(
-            "$label $value",
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
-          ),
         ],
       ),
     );
@@ -782,7 +818,6 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
 
   Widget _buildIntroCard() {
     final colorScheme = Theme.of(context).colorScheme;
-
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(18),
@@ -808,7 +843,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    "Review sales, export records, and manage previous transactions.",
+                    "Review full orders, customers, export records, and share bills.",
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -837,7 +872,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   Widget _buildToolsPanel() {
     return _buildPanel(
       title: "History Tools",
-      subtitle: "Filter the view, export sales, or create and restore backups",
+      subtitle: "Filter the view, export orders, or create and restore backups",
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -886,71 +921,48 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   Widget _buildOverviewPanel() {
     final summary = _visibleSummary();
     final visibleProfit = _asDouble(summary['profit']);
-    final todayResultLabel = _resultLabel(todayProfit);
 
     return _buildPanel(
       title: "Overview",
       subtitle: _overviewSubtitle(),
-      child: Column(
-        children: [
-          SizedBox(
-            height: 220,
-            child: GridView.count(
-              crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              physics: const NeverScrollableScrollPhysics(),
-              childAspectRatio: 1.18,
-              children: [
-                _buildMetricCard(
-                  label: "Visible Sales",
-                  value: "${summary['sales']}",
-                  icon: Icons.receipt_long_rounded,
-                  color: const Color(0xFF5F95FF),
-                  caption: selectedDate == null
-                      ? "All history"
-                      : "Filtered day",
-                ),
-                _buildMetricCard(
-                  label: "Visible Revenue",
-                  value: _formatCurrency(summary['revenue']),
-                  icon: Icons.trending_up_rounded,
-                  color: const Color(0xFF57D77F),
-                  caption: "Current screen total",
-                ),
-                _buildMetricCard(
-                  label: "Visible ${_resultLabel(visibleProfit)}",
-                  value: _formatResultValue(visibleProfit),
-                  icon: Icons.account_balance_wallet_outlined,
-                  color: visibleProfit < 0
-                      ? Theme.of(context).colorScheme.error
-                      : const Color(0xFFB785FF),
-                  caption: "Calculated from sale records",
-                ),
-                _buildMetricCard(
-                  label: "Today's Sales",
-                  value: "$todaySales",
-                  icon: Icons.today_outlined,
-                  color: const Color(0xFFFFB43A),
-                  caption: "Revenue ${_formatCurrency(todayRevenue)}",
-                ),
-              ],
+      child: SizedBox(
+        height: 220,
+        child: GridView.count(
+          crossAxisCount: 2,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          physics: const NeverScrollableScrollPhysics(),
+          childAspectRatio: 1.18,
+          children: [
+            _buildMetricCard(
+              label: "Visible Orders",
+              value: "${summary['sales']}",
+              icon: Icons.receipt_long_rounded,
+              color: const Color(0xFF5F95FF),
             ),
-          ),
-          const SizedBox(height: 14),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary.withAlpha(12),
-              borderRadius: BorderRadius.circular(18),
+            _buildMetricCard(
+              label: "Visible Revenue",
+              value: _formatCurrency(summary['revenue']),
+              icon: Icons.trending_up_rounded,
+              color: const Color(0xFF57D77F),
             ),
-            child: Text(
-              "Today: ${_formatCurrency(todayRevenue)} revenue • $todayResultLabel ${_formatResultValue(todayProfit)}",
-              style: const TextStyle(fontWeight: FontWeight.w600),
+            _buildMetricCard(
+              label: "Visible ${_resultLabel(visibleProfit)}",
+              value: _formatResultValue(visibleProfit),
+              icon: Icons.account_balance_wallet_outlined,
+              color: visibleProfit < 0
+                  ? Theme.of(context).colorScheme.error
+                  : const Color(0xFFB785FF),
             ),
-          ),
-        ],
+            _buildMetricCard(
+              label: "Today's Orders",
+              value: "$todaySales",
+              icon: Icons.today_outlined,
+              color: const Color(0xFFFFB43A),
+              caption: "Revenue ${_formatCurrency(todayRevenue)}",
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1085,12 +1097,12 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   Widget _buildChartPanel() {
     return _buildPanel(
       title: "Revenue Trend",
-      subtitle: "Latest sales days in your local history",
+      subtitle: "Latest order days in your local history",
       child: _buildRevenueChart(),
     );
   }
 
-  Widget _buildSectionHeader(_SalesSection section) {
+  Widget _buildSectionHeader(_OrderSection section) {
     final profitLabel = _resultLabel(section.profit);
     final colorScheme = Theme.of(context).colorScheme;
     final resultColor = section.profit < 0
@@ -1143,13 +1155,8 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
             spacing: 8,
             runSpacing: 8,
             children: [
-              _buildInfoPill(
-                icon: Icons.receipt_long_rounded,
-                label: "Sales",
-                value: "${section.sales.length}",
-              ),
-              _buildInfoPill(
-                icon: Icons.currency_rupee_rounded,
+              _OrderChip(label: "Orders", value: "${section.orders.length}"),
+              _OrderChip(
                 label: "Revenue",
                 value: _formatCurrency(section.revenue),
               ),
@@ -1160,16 +1167,23 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     );
   }
 
-  Widget _buildSaleCard(Map<String, dynamic> sale) {
-    final profit = _asDouble(sale['profit']);
-    final sellingPrice = _asDouble(sale['selling_price']);
-    final costPrice = _asDouble(sale['cost_price']);
-    final discount = _asDouble(sale['discount']);
-    final soldPrice = sale['sold_price'] == null
-        ? sellingPrice - discount
-        : _asDouble(sale['sold_price']);
-    final profitLabel = _resultLabel(profit);
-    final saleDate = _parseSaleDate(sale['date']?.toString());
+  String _productPreview(Map<String, dynamic> order) {
+    final raw = order['product_names']?.toString() ?? '';
+    if (raw.trim().isEmpty) return 'Products not available';
+    final parts = raw
+        .split(',')
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .toList();
+    if (parts.length <= 2) {
+      return parts.join(' • ');
+    }
+    return "${parts.take(2).join(' • ')} +${parts.length - 2} more";
+  }
+
+  Widget _buildOrderCard(Map<String, dynamic> order) {
+    final profit = _asDouble(order['profit']);
+    final orderDate = _parseOrderDate(order['date']?.toString());
     final colorScheme = Theme.of(context).colorScheme;
     final resultColor = profit < 0 ? colorScheme.error : colorScheme.secondary;
 
@@ -1181,8 +1195,8 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
-        onTap: () => _showSaleDetails(sale),
-        onLongPress: () => _handleSaleLongPress(sale),
+        onTap: () => _showOrderDetails(order),
+        onLongPress: () => _handleSaleLongPress(order),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -1196,7 +1210,10 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          sale['name']?.toString() ?? 'Unknown Product',
+                          order['bill_number']?.toString().trim().isNotEmpty ==
+                                  true
+                              ? order['bill_number'].toString().trim()
+                              : 'Sale #${order['id']}',
                           style: const TextStyle(
                             fontWeight: FontWeight.w700,
                             fontSize: 16,
@@ -1204,7 +1221,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          "${_formatTime(saleDate)} • ${sale['date']}",
+                          "${_formatTime(orderDate)} • ${order['customer_name']?.toString().trim().isNotEmpty == true ? order['customer_name'].toString().trim() : 'Walk-in Customer'}",
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
@@ -1215,7 +1232,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        _formatCurrency(sale['total']),
+                        _formatCurrency(order['total']),
                         style: const TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 16,
@@ -1223,7 +1240,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        "$profitLabel ${_formatResultValue(profit)}",
+                        "${_resultLabel(profit)} ${_formatResultValue(profit)}",
                         style: TextStyle(
                           color: resultColor,
                           fontWeight: FontWeight.w700,
@@ -1233,41 +1250,35 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
+              Text(
+                _productPreview(order),
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 12),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  _buildInfoPill(
-                    icon: Icons.shopping_bag_outlined,
+                  _OrderChip(
+                    label: "Items",
+                    value: "${_asInt(order['item_count'])}",
+                  ),
+                  _OrderChip(
                     label: "Units",
-                    value: sale['units']?.toString() ?? '--',
+                    value: "${_asInt(order['total_units'])}",
                   ),
-                  _buildInfoPill(
-                    icon: Icons.sell_outlined,
-                    label: "SP",
-                    value: _formatCurrency(sellingPrice),
-                  ),
-                  _buildInfoPill(
-                    icon: Icons.payments_outlined,
-                    label: "Sold",
-                    value: _formatCurrency(soldPrice),
-                  ),
-                  _buildInfoPill(
-                    icon: Icons.local_offer_outlined,
-                    label: "Discount",
-                    value: _formatCurrency(discount),
-                  ),
-                  _buildInfoPill(
-                    icon: Icons.inventory_2_outlined,
-                    label: "Cost",
-                    value: _formatCurrency(costPrice),
-                  ),
+                  if (order['customer_phone']?.toString().trim().isNotEmpty ==
+                      true)
+                    _OrderChip(
+                      label: "Phone",
+                      value: order['customer_phone'].toString().trim(),
+                    ),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               Text(
-                "Tap for details. Long press for more actions.",
+                "Tap for details. Long press for bill, edit, or delete.",
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
@@ -1277,12 +1288,12 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     );
   }
 
-  Widget _buildSalesTimeline() {
-    final sections = _groupedSales();
+  Widget _buildOrdersTimeline() {
+    final sections = _groupedOrders();
 
     if (sections.isEmpty) {
       return _buildPanel(
-        title: "Sales Timeline",
+        title: "Orders Timeline",
         subtitle: selectedDate == null
             ? "No sales have been recorded yet"
             : "No sales found for ${_formatSectionDate(selectedDate!)}",
@@ -1291,7 +1302,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
           child: Center(
             child: Text(
               selectedDate == null
-                  ? "No sales yet"
+                  ? "No orders yet"
                   : "No sales on the selected date",
               style: Theme.of(context).textTheme.bodyLarge,
             ),
@@ -1301,8 +1312,9 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     }
 
     return _buildPanel(
-      title: "Sales Timeline",
-      subtitle: "Tap a sale for details. Long press to edit or delete it",
+      title: "Orders Timeline",
+      subtitle:
+          "Tap an order for details. Long press to share bill, edit, or delete",
       child: Column(
         children: sections.map((section) {
           return Padding(
@@ -1310,7 +1322,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
             child: Column(
               children: [
                 _buildSectionHeader(section),
-                ...section.sales.map(_buildSaleCard),
+                ...section.orders.map(_buildOrderCard),
               ],
             ),
           );
@@ -1321,7 +1333,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading && sales.isEmpty) {
+    if (_isLoading && orders.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text("Sales History")),
         body: const Center(child: CircularProgressIndicator()),
@@ -1331,7 +1343,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text("Sales History")),
       body: RefreshIndicator(
-        onRefresh: () => loadSales(filterDate: selectedDate),
+        onRefresh: () => loadOrders(filterDate: selectedDate),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
@@ -1344,7 +1356,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
             const SizedBox(height: 16),
             _buildChartPanel(),
             const SizedBox(height: 16),
-            _buildSalesTimeline(),
+            _buildOrdersTimeline(),
           ],
         ),
       ),
@@ -1352,16 +1364,40 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   }
 }
 
-class _SalesSection {
-  const _SalesSection({
+class _OrderSection {
+  const _OrderSection({
     required this.date,
-    required this.sales,
+    required this.orders,
     required this.revenue,
     required this.profit,
   });
 
   final DateTime date;
-  final List<Map<String, dynamic>> sales;
+  final List<Map<String, dynamic>> orders;
   final double revenue;
   final double profit;
+}
+
+class _OrderChip extends StatelessWidget {
+  const _OrderChip({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primary.withAlpha(10),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        "$label: $value",
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+      ),
+    );
+  }
 }
