@@ -1400,7 +1400,7 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisCount: 2,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
-          mainAxisExtent: 176,
+          mainAxisExtent: 204,
         ),
         children: [
           _buildMetricCard(

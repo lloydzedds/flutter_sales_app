@@ -1064,44 +1064,44 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     return _buildPanel(
       title: "Overview",
       subtitle: _overviewSubtitle(),
-      child: SizedBox(
-        height: 220,
-        child: GridView.count(
+      child: GridView(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
-          physics: const NeverScrollableScrollPhysics(),
-          childAspectRatio: 1.18,
-          children: [
-            _buildMetricCard(
-              label: "Visible Orders",
-              value: "${summary['sales']}",
-              icon: Icons.receipt_long_rounded,
-              color: const Color(0xFF5F95FF),
-            ),
-            _buildMetricCard(
-              label: "Visible Revenue",
-              value: _formatCurrency(summary['revenue']),
-              icon: Icons.trending_up_rounded,
-              color: const Color(0xFF57D77F),
-            ),
-            _buildMetricCard(
-              label: "Visible ${_resultLabel(visibleProfit)}",
-              value: _formatResultValue(visibleProfit),
-              icon: Icons.account_balance_wallet_outlined,
-              color: visibleProfit < 0
-                  ? Theme.of(context).colorScheme.error
-                  : const Color(0xFFB785FF),
-            ),
-            _buildMetricCard(
-              label: "Today's Orders",
-              value: "$todaySales",
-              icon: Icons.today_outlined,
-              color: const Color(0xFFFFB43A),
-              caption: "Revenue ${_formatCurrency(todayRevenue)}",
-            ),
-          ],
+          mainAxisExtent: 154,
         ),
+        children: [
+          _buildMetricCard(
+            label: "Visible Orders",
+            value: "${summary['sales']}",
+            icon: Icons.receipt_long_rounded,
+            color: const Color(0xFF5F95FF),
+          ),
+          _buildMetricCard(
+            label: "Visible Revenue",
+            value: _formatCurrency(summary['revenue']),
+            icon: Icons.trending_up_rounded,
+            color: const Color(0xFF57D77F),
+          ),
+          _buildMetricCard(
+            label: "Visible ${_resultLabel(visibleProfit)}",
+            value: _formatResultValue(visibleProfit),
+            icon: Icons.account_balance_wallet_outlined,
+            color: visibleProfit < 0
+                ? Theme.of(context).colorScheme.error
+                : const Color(0xFFB785FF),
+          ),
+          _buildMetricCard(
+            label: "Today's Orders",
+            value: "$todaySales",
+            icon: Icons.today_outlined,
+            color: const Color(0xFFFFB43A),
+            caption: "Revenue ${_formatCurrency(todayRevenue)}",
+          ),
+        ],
       ),
     );
   }
