@@ -9,7 +9,7 @@ class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
   static const _databaseName = 'sales.db';
-  static const _databaseVersion = 5;
+  static const _databaseVersion = 6;
   static const _groupKeyExpr =
       "COALESCE(sales.sale_group_id, 'legacy-' || CAST(sales.id AS TEXT))";
 
@@ -61,7 +61,11 @@ class DatabaseHelper {
         customer_id INTEGER,
         customer_name TEXT,
         customer_phone TEXT,
-        bill_number TEXT
+        bill_number TEXT,
+        payment_status TEXT,
+        payment_method TEXT,
+        amount_paid REAL,
+        due_amount REAL
       )
     ''');
 
@@ -128,6 +132,15 @@ class DatabaseHelper {
         'photo_bytes': 'ALTER TABLE products ADD COLUMN photo_bytes BLOB',
       });
     }
+
+    if (oldVersion < 6) {
+      await _ensureSalesColumns(db, {
+        'payment_status': 'ALTER TABLE sales ADD COLUMN payment_status TEXT',
+        'payment_method': 'ALTER TABLE sales ADD COLUMN payment_method TEXT',
+        'amount_paid': 'ALTER TABLE sales ADD COLUMN amount_paid REAL',
+        'due_amount': 'ALTER TABLE sales ADD COLUMN due_amount REAL',
+      });
+    }
   }
 
   Future<void> _ensureSalesColumns(
@@ -178,6 +191,71 @@ class DatabaseHelper {
   String _trim(String? value) => value?.trim() ?? '';
 
   String _nowStamp() => DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
+
+  Map<String, dynamic> _resolvePaymentFields({
+    required List<Map<String, dynamic>> items,
+    String? paymentStatus,
+    String? paymentMethod,
+    double? amountPaid,
+  }) {
+    final total = items.fold<double>(
+      0,
+      (sum, item) => sum + _asDouble(item['total']),
+    );
+    final requestedStatus = _trim(paymentStatus).toLowerCase();
+
+    if (total <= 0) {
+      return {
+        'payment_status': 'paid',
+        'payment_method': _trim(paymentMethod).isEmpty
+            ? 'Cash'
+            : _trim(paymentMethod),
+        'amount_paid': 0.0,
+        'due_amount': 0.0,
+      };
+    }
+
+    late final String normalizedStatus;
+    late final double normalizedAmountPaid;
+
+    switch (requestedStatus) {
+      case 'partial':
+      case 'partially_paid':
+        normalizedStatus = 'partial';
+        normalizedAmountPaid = _asDouble(amountPaid);
+        if (normalizedAmountPaid <= 0 || normalizedAmountPaid >= total) {
+          throw Exception(
+            'Enter an amount received that is more than 0 and less than the total',
+          );
+        }
+        break;
+      case 'unpaid':
+        normalizedStatus = 'unpaid';
+        normalizedAmountPaid = 0;
+        break;
+      case 'paid':
+      default:
+        normalizedStatus = 'paid';
+        normalizedAmountPaid = total;
+        break;
+    }
+
+    final dueAmount = total > normalizedAmountPaid
+        ? total - normalizedAmountPaid
+        : 0.0;
+    final normalizedMethod = _trim(paymentMethod).isEmpty
+        ? normalizedStatus == 'unpaid'
+              ? 'Credit'
+              : 'Cash'
+        : _trim(paymentMethod);
+
+    return {
+      'payment_status': normalizedStatus,
+      'payment_method': normalizedMethod,
+      'amount_paid': normalizedAmountPaid,
+      'due_amount': dueAmount,
+    };
+  }
 
   Future<int> insertProduct(Map<String, dynamic> row) async {
     final db = await instance.database;
@@ -492,6 +570,9 @@ class DatabaseHelper {
     required List<Map<String, dynamic>> items,
     String? customerName,
     String? customerPhone,
+    String? paymentStatus,
+    String? paymentMethod,
+    double? amountPaid,
   }) async {
     final db = await instance.database;
     final saleDate = _nowStamp();
@@ -509,6 +590,12 @@ class DatabaseHelper {
         purchaseDate: saleDate,
       );
       final billNumber = await _buildBillNumberTxn(txn, saleDate);
+      final paymentFields = _resolvePaymentFields(
+        items: items,
+        paymentStatus: paymentStatus,
+        paymentMethod: paymentMethod,
+        amountPaid: amountPaid,
+      );
 
       await _deductStockForItemsTxn(txn, items);
 
@@ -532,6 +619,10 @@ class DatabaseHelper {
               ? null
               : _trim(customerPhone),
           'bill_number': billNumber,
+          'payment_status': paymentFields['payment_status'],
+          'payment_method': paymentFields['payment_method'],
+          'amount_paid': paymentFields['amount_paid'],
+          'due_amount': paymentFields['due_amount'],
         });
       }
     });
@@ -544,6 +635,9 @@ class DatabaseHelper {
     required List<Map<String, dynamic>> items,
     String? customerName,
     String? customerPhone,
+    String? paymentStatus,
+    String? paymentMethod,
+    double? amountPaid,
   }) async {
     final db = await instance.database;
 
@@ -566,6 +660,12 @@ class DatabaseHelper {
         name: customerName ?? '',
         phone: customerPhone ?? '',
         purchaseDate: preservedDate,
+      );
+      final paymentFields = _resolvePaymentFields(
+        items: items,
+        paymentStatus: paymentStatus,
+        paymentMethod: paymentMethod,
+        amountPaid: amountPaid,
       );
 
       if (_trim(existingRows.first['sale_group_id']?.toString()).isNotEmpty) {
@@ -608,6 +708,10 @@ class DatabaseHelper {
               ? null
               : _trim(customerPhone),
           'bill_number': nextBillNumber,
+          'payment_status': paymentFields['payment_status'],
+          'payment_method': paymentFields['payment_method'],
+          'amount_paid': paymentFields['amount_paid'],
+          'due_amount': paymentFields['due_amount'],
         });
       }
     });
@@ -694,6 +798,20 @@ class DatabaseHelper {
           THEN COALESCE(sales.selling_price, products.selling_price) - sales.discount
           ELSE NULL
         END AS sold_price,
+        COALESCE(NULLIF(TRIM(sales.payment_status), ''), 'paid') AS payment_status,
+        COALESCE(NULLIF(TRIM(sales.payment_method), ''), 'Cash') AS payment_method,
+        COALESCE(
+          sales.amount_paid,
+          (
+            SELECT SUM(s2.total)
+            FROM sales s2
+            WHERE COALESCE(
+                    s2.sale_group_id,
+                    'legacy-' || CAST(s2.id AS TEXT)
+                  ) = $_groupKeyExpr
+          )
+        ) AS amount_paid,
+        COALESCE(sales.due_amount, 0) AS due_amount,
         CASE
           WHEN COALESCE(sales.cost_price, products.cost_price) IS NOT NULL
             AND COALESCE(sales.selling_price, products.selling_price) IS NOT NULL
@@ -769,6 +887,10 @@ class DatabaseHelper {
           MAX(customers.phone),
           ''
         ) AS customer_phone,
+        COALESCE(NULLIF(TRIM(MAX(sales.payment_status)), ''), 'paid') AS payment_status,
+        COALESCE(NULLIF(TRIM(MAX(sales.payment_method)), ''), 'Cash') AS payment_method,
+        COALESCE(MAX(sales.amount_paid), SUM(sales.total)) AS amount_paid,
+        COALESCE(MAX(sales.due_amount), 0) AS due_amount,
         MAX(sales.date) AS date,
         COUNT(*) AS item_count,
         SUM(sales.units) AS total_units,

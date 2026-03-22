@@ -665,6 +665,169 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildMetricPill({
+    required String label,
+    required Color color,
+    Color? backgroundColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: backgroundColor ?? color.withAlpha(32),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w700,
+          fontSize: 11.5,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfitMetricCard() {
+    final isLoss = totalProfit < 0;
+    final isNeutral = totalProfit == 0;
+    final accentColor = isLoss
+        ? const Color(0xFFFF7D7D)
+        : isNeutral
+        ? Colors.white.withAlpha(204)
+        : const Color(0xFFB785FF);
+    final resultLabel = isLoss
+        ? "Loss"
+        : isNeutral
+        ? "Break-even"
+        : "Profit";
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: _border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  "Profit",
+                  style: TextStyle(
+                    color: Colors.white.withAlpha(230),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Container(
+                height: 44,
+                width: 44,
+                decoration: BoxDecoration(
+                  color: accentColor.withAlpha(36),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(
+                  isLoss
+                      ? Icons.trending_down_rounded
+                      : Icons.account_balance_wallet_outlined,
+                  color: accentColor,
+                ),
+              ),
+            ],
+          ),
+          const Spacer(),
+          Text(
+            _formatMoney(isLoss ? totalProfit.abs() : totalProfit),
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 8),
+          _buildMetricPill(label: resultLabel, color: accentColor),
+          const SizedBox(height: 10),
+          Text(
+            "Based on the selected date range",
+            style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProductsMetricCard() {
+    final healthyCount = products.where((product) {
+      final stock = _asInt(product['stock']);
+      return stock > 5;
+    }).length;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: _border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  "Products",
+                  style: TextStyle(
+                    color: Colors.white.withAlpha(230),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Container(
+                height: 44,
+                width: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFB43A).withAlpha(36),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.inventory_2_rounded,
+                  color: Color(0xFFFFB43A),
+                ),
+              ),
+            ],
+          ),
+          const Spacer(),
+          Text(
+            "$_productCount",
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            "$healthyCount healthy in inventory",
+            style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 12),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildMetricPill(
+                label: "Low $_lowStockCount",
+                color: const Color(0xFFFFB43A),
+              ),
+              _buildMetricPill(
+                label: "Out $_outOfStockCount",
+                color: const Color(0xFFFF7D7D),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPanel({
     required String title,
     String? subtitle,
@@ -1230,45 +1393,31 @@ class _HomeScreenState extends State<HomeScreen> {
       const SizedBox(height: 16),
       _buildDateRangeCard(),
       const SizedBox(height: 16),
-      SizedBox(
-        height: 230,
-        child: GridView.count(
+      GridView(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
-          physics: const NeverScrollableScrollPhysics(),
-          childAspectRatio: 1.15,
-          children: [
-            _buildMetricCard(
-              label: "Revenue",
-              value: _formatMoney(totalRevenue),
-              icon: Icons.trending_up_rounded,
-              accentColor: const Color(0xFF57D77F),
-            ),
-            _buildMetricCard(
-              label: "Sales",
-              value: "$totalSales",
-              icon: Icons.receipt_long_rounded,
-              accentColor: const Color(0xFF5F95FF),
-            ),
-            _buildMetricCard(
-              label: "Profit",
-              value: _formatMoney(totalProfit),
-              icon: Icons.account_balance_wallet_outlined,
-              accentColor: const Color(0xFFB785FF),
-              caption: totalProfit < 0
-                  ? "Loss in selected range"
-                  : "Selected range",
-            ),
-            _buildMetricCard(
-              label: "Products",
-              value: "$_productCount",
-              icon: Icons.inventory_2_rounded,
-              accentColor: const Color(0xFFFFB43A),
-              caption: "$_lowStockCount low stock - $_outOfStockCount out",
-            ),
-          ],
+          mainAxisExtent: 176,
         ),
+        children: [
+          _buildMetricCard(
+            label: "Revenue",
+            value: _formatMoney(totalRevenue),
+            icon: Icons.trending_up_rounded,
+            accentColor: const Color(0xFF57D77F),
+          ),
+          _buildMetricCard(
+            label: "Sales",
+            value: "$totalSales",
+            icon: Icons.receipt_long_rounded,
+            accentColor: const Color(0xFF5F95FF),
+          ),
+          _buildProfitMetricCard(),
+          _buildProductsMetricCard(),
+        ],
       ),
       const SizedBox(height: 16),
       _buildPrimaryActionButton(),

@@ -59,6 +59,30 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
     return value < 0 ? "Loss" : "Profit";
   }
 
+  String _paymentStatusLabel(dynamic value) {
+    switch (value?.toString().trim().toLowerCase()) {
+      case 'partial':
+      case 'partially_paid':
+        return 'Partially Paid';
+      case 'unpaid':
+        return 'Unpaid';
+      default:
+        return 'Paid in Full';
+    }
+  }
+
+  Color _paymentStatusColor(BuildContext context, dynamic value) {
+    switch (value?.toString().trim().toLowerCase()) {
+      case 'partial':
+      case 'partially_paid':
+        return const Color(0xFFFFB43A);
+      case 'unpaid':
+        return Theme.of(context).colorScheme.error;
+      default:
+        return Theme.of(context).colorScheme.secondary;
+    }
+  }
+
   DateTime? _parseOrderDate(String? raw) {
     if (raw == null || raw.isEmpty) return null;
     try {
@@ -161,6 +185,37 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 14),
+                _CustomerOrderChip(
+                  label: "Payment",
+                  value: _paymentStatusLabel(order['payment_status']),
+                  valueColor: _paymentStatusColor(
+                    context,
+                    order['payment_status'],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _CustomerOrderChip(
+                  label: "Method",
+                  value:
+                      order['payment_method']?.toString().trim().isNotEmpty ==
+                          true
+                      ? order['payment_method'].toString().trim()
+                      : 'Cash',
+                ),
+                const SizedBox(height: 8),
+                _CustomerOrderChip(
+                  label: "Received",
+                  value: _formatCurrency(order['amount_paid']),
+                ),
+                const SizedBox(height: 8),
+                _CustomerOrderChip(
+                  label: "Due",
+                  value: _formatCurrency(order['due_amount']),
+                  valueColor: _asDouble(order['due_amount']) > 0
+                      ? Theme.of(context).colorScheme.error
+                      : Theme.of(context).colorScheme.secondary,
+                ),
+                const SizedBox(height: 14),
                 ...items.map((item) {
                   return Container(
                     margin: const EdgeInsets.only(bottom: 10),
@@ -221,6 +276,8 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
     final resultColor = profit < 0
         ? Theme.of(context).colorScheme.error
         : Theme.of(context).colorScheme.secondary;
+    final paymentColor = _paymentStatusColor(context, order['payment_status']);
+    final dueAmount = _asDouble(order['due_amount']);
     final productPreview =
         order['product_names']?.toString().trim().isNotEmpty == true
         ? order['product_names'].toString().trim()
@@ -287,6 +344,17 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
                     value: _formatResultValue(profit),
                     valueColor: resultColor,
                   ),
+                  _CustomerOrderChip(
+                    label: "Payment",
+                    value: _paymentStatusLabel(order['payment_status']),
+                    valueColor: paymentColor,
+                  ),
+                  if (dueAmount > 0)
+                    _CustomerOrderChip(
+                      label: "Due",
+                      value: _formatCurrency(dueAmount),
+                      valueColor: Theme.of(context).colorScheme.error,
+                    ),
                 ],
               ),
               const SizedBox(height: 12),
@@ -329,6 +397,10 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
     final totalSpent = _orders.fold<double>(
       0,
       (sum, order) => sum + _asDouble(order['total']),
+    );
+    final outstandingDue = _orders.fold<double>(
+      0,
+      (sum, order) => sum + _asDouble(order['due_amount']),
     );
 
     return Scaffold(
@@ -381,6 +453,13 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
                         _CustomerOrderChip(
                           label: "Total Spent",
                           value: _formatCurrency(totalSpent),
+                        ),
+                        _CustomerOrderChip(
+                          label: "Outstanding",
+                          value: _formatCurrency(outstandingDue),
+                          valueColor: outstandingDue > 0
+                              ? Theme.of(context).colorScheme.error
+                              : Theme.of(context).colorScheme.secondary,
                         ),
                       ],
                     ),

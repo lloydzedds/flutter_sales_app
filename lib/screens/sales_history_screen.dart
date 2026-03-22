@@ -77,6 +77,30 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     return value < 0 ? "Loss" : "Profit";
   }
 
+  String _paymentStatusLabel(dynamic value) {
+    switch (value?.toString().trim().toLowerCase()) {
+      case 'partial':
+      case 'partially_paid':
+        return 'Partially Paid';
+      case 'unpaid':
+        return 'Unpaid';
+      default:
+        return 'Paid in Full';
+    }
+  }
+
+  Color _paymentStatusColor(BuildContext context, dynamic value) {
+    switch (value?.toString().trim().toLowerCase()) {
+      case 'partial':
+      case 'partially_paid':
+        return const Color(0xFFFFB43A);
+      case 'unpaid':
+        return Theme.of(context).colorScheme.error;
+      default:
+        return Theme.of(context).colorScheme.secondary;
+    }
+  }
+
   DateTime? _parseOrderDate(String? raw) {
     if (raw == null || raw.isEmpty) return null;
     try {
@@ -618,6 +642,31 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                   "${_asInt(order['total_units'])} units",
                 ),
                 _buildDetailRow("Total", _formatCurrency(order['total'])),
+                _buildDetailRow(
+                  "Payment Status",
+                  _paymentStatusLabel(order['payment_status']),
+                  valueColor: _paymentStatusColor(
+                    context,
+                    order['payment_status'],
+                  ),
+                ),
+                _buildDetailRow(
+                  "Payment Method",
+                  order['payment_method']?.toString().trim().isNotEmpty == true
+                      ? order['payment_method'].toString().trim()
+                      : 'Cash',
+                ),
+                _buildDetailRow(
+                  "Amount Received",
+                  _formatCurrency(order['amount_paid']),
+                ),
+                _buildDetailRow(
+                  "Due Amount",
+                  _formatCurrency(order['due_amount']),
+                  valueColor: _asDouble(order['due_amount']) > 0
+                      ? colorScheme.error
+                      : colorScheme.secondary,
+                ),
                 _buildDetailRow(
                   _resultLabel(profit),
                   _formatResultValue(profit),
@@ -1276,6 +1325,8 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     final orderDate = _parseOrderDate(order['date']?.toString());
     final colorScheme = Theme.of(context).colorScheme;
     final resultColor = profit < 0 ? colorScheme.error : colorScheme.secondary;
+    final paymentColor = _paymentStatusColor(context, order['payment_status']);
+    final dueAmount = _asDouble(order['due_amount']);
 
     return Container(
       margin: const EdgeInsets.only(top: 12),
@@ -1358,6 +1409,17 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                     label: "Units",
                     value: "${_asInt(order['total_units'])}",
                   ),
+                  _OrderChip(
+                    label: "Payment",
+                    value: _paymentStatusLabel(order['payment_status']),
+                    valueColor: paymentColor,
+                  ),
+                  if (dueAmount > 0)
+                    _OrderChip(
+                      label: "Due",
+                      value: _formatCurrency(dueAmount),
+                      valueColor: colorScheme.error,
+                    ),
                   if (order['customer_phone']?.toString().trim().isNotEmpty ==
                       true)
                     _OrderChip(
@@ -1485,10 +1547,11 @@ class _ExportSelection {
 }
 
 class _OrderChip extends StatelessWidget {
-  const _OrderChip({required this.label, required this.value});
+  const _OrderChip({required this.label, required this.value, this.valueColor});
 
   final String label;
   final String value;
+  final Color? valueColor;
 
   @override
   Widget build(BuildContext context) {
@@ -1500,9 +1563,10 @@ class _OrderChip extends StatelessWidget {
       ),
       child: Text(
         "$label: $value",
-        style: Theme.of(
-          context,
-        ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          fontWeight: FontWeight.w600,
+          color: valueColor,
+        ),
       ),
     );
   }

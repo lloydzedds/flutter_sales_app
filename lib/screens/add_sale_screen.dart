@@ -6,6 +6,8 @@ import 'add_product_screen.dart';
 
 enum DiscountMode { manual, soldPrice, percentage }
 
+enum PaymentStatusOption { paid, partial, unpaid }
+
 class AddSaleScreen extends StatefulWidget {
   const AddSaleScreen({super.key, this.existingSale});
 
@@ -20,6 +22,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
 
   final customerNameController = TextEditingController();
   final customerPhoneController = TextEditingController();
+  final amountPaidController = TextEditingController();
   final unitsController = TextEditingController();
   final discountController = TextEditingController();
   final soldPriceController = TextEditingController();
@@ -35,6 +38,8 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   double? _composerCostPrice;
   double? _composerSellingPrice;
   DiscountMode discountMode = DiscountMode.manual;
+  PaymentStatusOption _paymentStatus = PaymentStatusOption.paid;
+  String _paymentMethod = _paymentMethods.first;
   bool _didLoadExistingSale = false;
   bool _missingExistingProduct = false;
   bool _isSaving = false;
@@ -43,6 +48,16 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   int? _editingItemIndex;
 
   bool get _isEditing => widget.existingSale != null;
+
+  static const List<String> _paymentMethods = [
+    'Cash',
+    'UPI',
+    'Card',
+    'Bank Transfer',
+    'Credit',
+    'Cheque',
+    'Other',
+  ];
 
   DiscountMode get _defaultDiscountMode {
     switch (AppSettingsController.instance.defaultDiscountMode) {
@@ -76,6 +91,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     productSearchController.removeListener(_handleProductSearchChanged);
     customerNameController.dispose();
     customerPhoneController.dispose();
+    amountPaidController.dispose();
     unitsController.dispose();
     discountController.dispose();
     soldPriceController.dispose();
@@ -125,6 +141,20 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
           widget.existingSale?['customer_name']?.toString() ?? '';
       customerPhoneController.text =
           widget.existingSale?['customer_phone']?.toString() ?? '';
+      _paymentStatus = _paymentStatusFromRaw(
+        widget.existingSale?['payment_status']?.toString(),
+      );
+      _paymentMethod =
+          widget.existingSale?['payment_method']
+                  ?.toString()
+                  .trim()
+                  .isNotEmpty ==
+              true
+          ? widget.existingSale!['payment_method'].toString().trim()
+          : _paymentMethods.first;
+      amountPaidController.text = _paymentStatus == PaymentStatusOption.partial
+          ? _formatAmount(_asDouble(widget.existingSale?['amount_paid']))
+          : '';
       discountMode = _defaultDiscountMode;
     });
   }
@@ -497,6 +527,94 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     }
   }
 
+  PaymentStatusOption _paymentStatusFromRaw(String? raw) {
+    switch (raw?.trim().toLowerCase()) {
+      case 'partial':
+      case 'partially_paid':
+        return PaymentStatusOption.partial;
+      case 'unpaid':
+        return PaymentStatusOption.unpaid;
+      default:
+        return PaymentStatusOption.paid;
+    }
+  }
+
+  String _paymentStatusKey(PaymentStatusOption status) {
+    switch (status) {
+      case PaymentStatusOption.partial:
+        return 'partial';
+      case PaymentStatusOption.unpaid:
+        return 'unpaid';
+      case PaymentStatusOption.paid:
+        return 'paid';
+    }
+  }
+
+  String _paymentStatusLabel(PaymentStatusOption status) {
+    switch (status) {
+      case PaymentStatusOption.partial:
+        return "Partially Paid";
+      case PaymentStatusOption.unpaid:
+        return "Unpaid";
+      case PaymentStatusOption.paid:
+        return "Paid in Full";
+    }
+  }
+
+  double? _parsedAmountPaid() =>
+      double.tryParse(amountPaidController.text.trim());
+
+  double _resolvedAmountPaidPreview() {
+    final total = _cartNetTotal();
+    switch (_paymentStatus) {
+      case PaymentStatusOption.paid:
+        return total;
+      case PaymentStatusOption.unpaid:
+        return 0;
+      case PaymentStatusOption.partial:
+        final typedAmount = _parsedAmountPaid() ?? 0;
+        if (typedAmount < 0) return 0;
+        if (typedAmount > total) return total;
+        return typedAmount;
+    }
+  }
+
+  double _dueAmountPreview() {
+    final dueAmount = _cartNetTotal() - _resolvedAmountPaidPreview();
+    return dueAmount > 0 ? dueAmount : 0;
+  }
+
+  String? _paymentValidationMessage() {
+    if (_paymentStatus != PaymentStatusOption.partial) {
+      return null;
+    }
+
+    final total = _cartNetTotal();
+    final amountPaid = _parsedAmountPaid();
+    if (amountPaid == null) {
+      return "Enter the amount received";
+    }
+    if (amountPaid <= 0) {
+      return "Amount received must be more than 0";
+    }
+    if (amountPaid >= total && total > 0) {
+      return "For a fully paid sale, choose Paid in Full";
+    }
+    return null;
+  }
+
+  void _changePaymentStatus(PaymentStatusOption status) {
+    setState(() {
+      _paymentStatus = status;
+      if (status != PaymentStatusOption.partial) {
+        amountPaidController.clear();
+      }
+      if (status == PaymentStatusOption.unpaid && _paymentMethod == 'Cash') {
+        _paymentMethod = 'Credit';
+      }
+    });
+  }
+
   void _clearComposer({bool keepCustomer = true}) {
     FocusScope.of(context).unfocus();
     _lineItemFormKey.currentState?.reset();
@@ -526,6 +644,21 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
             widget.existingSale?['customer_name']?.toString() ?? '';
         customerPhoneController.text =
             widget.existingSale?['customer_phone']?.toString() ?? '';
+        _paymentStatus = _paymentStatusFromRaw(
+          widget.existingSale?['payment_status']?.toString(),
+        );
+        _paymentMethod =
+            widget.existingSale?['payment_method']
+                    ?.toString()
+                    .trim()
+                    .isNotEmpty ==
+                true
+            ? widget.existingSale!['payment_method'].toString().trim()
+            : _paymentMethods.first;
+        amountPaidController.text =
+            _paymentStatus == PaymentStatusOption.partial
+            ? _formatAmount(_asDouble(widget.existingSale?['amount_paid']))
+            : '';
       });
       _clearComposer();
       return;
@@ -535,6 +668,9 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       _items = [];
       customerNameController.clear();
       customerPhoneController.clear();
+      amountPaidController.clear();
+      _paymentStatus = PaymentStatusOption.paid;
+      _paymentMethod = _paymentMethods.first;
     });
     _clearComposer(keepCustomer: false);
   }
@@ -698,6 +834,12 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       return;
     }
 
+    final paymentMessage = _paymentValidationMessage();
+    if (paymentMessage != null) {
+      _showMessage(paymentMessage);
+      return;
+    }
+
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
 
@@ -714,12 +856,18 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
           items: itemMaps,
           customerName: customerNameController.text,
           customerPhone: customerPhoneController.text,
+          paymentStatus: _paymentStatusKey(_paymentStatus),
+          paymentMethod: _paymentMethod,
+          amountPaid: _resolvedAmountPaidPreview(),
         );
       } else {
         await DatabaseHelper.instance.createSaleOrder(
           items: itemMaps,
           customerName: customerNameController.text,
           customerPhone: customerPhoneController.text,
+          paymentStatus: _paymentStatusKey(_paymentStatus),
+          paymentMethod: _paymentMethod,
+          amountPaid: _resolvedAmountPaidPreview(),
         );
       }
 
@@ -872,6 +1020,120 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
               keyboardType: TextInputType.phone,
               textInputAction: TextInputAction.next,
               decoration: const InputDecoration(labelText: "Phone Number"),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaymentCard(BuildContext context) {
+    final amountPaid = _resolvedAmountPaidPreview();
+    final dueAmount = _dueAmountPreview();
+    final dueColor = dueAmount > 0
+        ? Theme.of(context).colorScheme.error
+        : Theme.of(context).colorScheme.secondary;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "Payment Details",
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Track whether this order is fully paid, partially paid, or still due.",
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: PaymentStatusOption.values.map((status) {
+                return ChoiceChip(
+                  label: Text(_paymentStatusLabel(status)),
+                  selected: _paymentStatus == status,
+                  onSelected: (_) => _changePaymentStatus(status),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              initialValue: _paymentMethods.contains(_paymentMethod)
+                  ? _paymentMethod
+                  : _paymentMethods.first,
+              decoration: const InputDecoration(labelText: "Payment Method"),
+              items: _paymentMethods.map((method) {
+                return DropdownMenuItem<String>(
+                  value: method,
+                  child: Text(method),
+                );
+              }).toList(),
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() {
+                  _paymentMethod = value;
+                });
+              },
+            ),
+            const SizedBox(height: 14),
+            if (_paymentStatus == PaymentStatusOption.partial)
+              TextField(
+                controller: amountPaidController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                textInputAction: TextInputAction.done,
+                onChanged: _refreshPreview,
+                decoration: const InputDecoration(
+                  labelText: "Amount Received",
+                  prefixText: "Rs ",
+                  helperText:
+                      "Enter the amount collected now. The rest stays due.",
+                ),
+              )
+            else
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary.withAlpha(10),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Text(
+                  _paymentStatus == PaymentStatusOption.paid
+                      ? "This order will be saved as fully paid."
+                      : "This order will stay unpaid until the customer clears the due amount.",
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildMetricTile(
+                    context: context,
+                    label: "Received",
+                    value: _formatCurrency(amountPaid),
+                    icon: Icons.payments_outlined,
+                    accentColor: const Color(0xFF57D77F),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildMetricTile(
+                    context: context,
+                    label: "Due",
+                    value: _formatCurrency(dueAmount),
+                    icon: Icons.account_balance_wallet_outlined,
+                    accentColor: dueColor,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -1309,7 +1571,12 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
 
   Widget _buildSummaryCard(BuildContext context) {
     final totalProfit = _cartProfit();
+    final amountPaid = _resolvedAmountPaidPreview();
+    final dueAmount = _dueAmountPreview();
     final profitColor = totalProfit < 0
+        ? Theme.of(context).colorScheme.error
+        : Theme.of(context).colorScheme.secondary;
+    final dueColor = dueAmount > 0
         ? Theme.of(context).colorScheme.error
         : Theme.of(context).colorScheme.secondary;
 
@@ -1372,6 +1639,23 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
               "Amount to Pay",
               _formatCurrency(_cartNetTotal()),
               valueColor: Theme.of(context).colorScheme.primary,
+            ),
+            _buildSummaryRow(
+              context,
+              "Payment Status",
+              _paymentStatusLabel(_paymentStatus),
+            ),
+            _buildSummaryRow(context, "Payment Method", _paymentMethod),
+            _buildSummaryRow(
+              context,
+              "Amount Received",
+              _formatCurrency(amountPaid),
+            ),
+            _buildSummaryRow(
+              context,
+              "Due Amount",
+              _formatCurrency(dueAmount),
+              valueColor: dueColor,
             ),
           ],
         ),
@@ -1438,6 +1722,8 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
               _buildCurrentItemCard(context),
               const SizedBox(height: 16),
               _buildDiscountCard(context),
+              const SizedBox(height: 16),
+              _buildPaymentCard(context),
               const SizedBox(height: 16),
               _buildSummaryCard(context),
               const SizedBox(height: 16),

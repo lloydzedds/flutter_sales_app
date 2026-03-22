@@ -31,6 +31,18 @@ class SaleBillService {
     return "Rs ${_formatAmount(_asDouble(value))}";
   }
 
+  static String _paymentStatusLabel(dynamic value) {
+    switch (value?.toString().trim().toLowerCase()) {
+      case 'partial':
+      case 'partially_paid':
+        return 'Partially Paid';
+      case 'unpaid':
+        return 'Unpaid';
+      default:
+        return 'Paid in Full';
+    }
+  }
+
   static String _safeFilePart(String value) {
     return value.replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '_');
   }
@@ -100,6 +112,12 @@ class SaleBillService {
                     pw.Text(
                       'Phone: ${order['customer_phone'].toString().trim()}',
                     ),
+                  pw.Text(
+                    'Payment: ${_paymentStatusLabel(order['payment_status'])}',
+                  ),
+                  pw.Text(
+                    'Method: ${order['payment_method']?.toString().trim().isNotEmpty == true ? order['payment_method'].toString().trim() : 'Cash'}',
+                  ),
                 ],
               ),
             ),
@@ -156,6 +174,14 @@ class SaleBillService {
                     pw.SizedBox(height: 4),
                     pw.Text(
                       'Amount to Pay: ${_formatCurrency(order['total'])}',
+                    ),
+                    pw.SizedBox(height: 4),
+                    pw.Text(
+                      'Amount Received: ${_formatCurrency(order['amount_paid'])}',
+                    ),
+                    pw.SizedBox(height: 4),
+                    pw.Text(
+                      'Due Amount: ${_formatCurrency(order['due_amount'])}',
                     ),
                   ],
                 ),
