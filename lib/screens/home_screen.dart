@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -5,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../database/database_helper.dart';
 import 'add_product_screen.dart';
 import 'add_sale_screen.dart';
+import 'settings_screen.dart';
 import 'sales_history_screen.dart';
 import 'stock_adjust_screen.dart';
 
@@ -21,9 +24,11 @@ class _HomeScreenState extends State<HomeScreen> {
   static const _surfaceSoft = Color(0xFF2A2432);
   static const _accent = Color(0xFF8B5FE8);
   static const _border = Color(0xFF312A3A);
+  static const double _headerReservedSpace = 108;
 
   int _selectedTab = 0;
   bool _isLoading = true;
+  bool _isHeaderScrolled = false;
   DateTimeRange _selectedRange = DateTimeRange(
     start: DateTime.now().subtract(const Duration(days: 6)),
     end: DateTime.now(),
@@ -231,6 +236,12 @@ class _HomeScreenState extends State<HomeScreen> {
     await loadDashboard();
   }
 
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Future<void> _openStockAdjustment({
     Map<String, dynamic>? product,
     StockAdjustMode mode = StockAdjustMode.add,
@@ -294,65 +305,161 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Widget _buildHeader(String title, {String? subtitle}) {
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w700,
-                ),
+  String _currentTabTitle() {
+    switch (_selectedTab) {
+      case 0:
+        return "Dashboard";
+      case 1:
+        return "Sales";
+      case 2:
+        return "Inventory";
+      case 3:
+        return "Stock Control";
+      case 4:
+        return "Reports";
+      default:
+        return "Dashboard";
+    }
+  }
+
+  String _currentTabSubtitle() {
+    switch (_selectedTab) {
+      case 0:
+        return "A dark sales cockpit for your daily business";
+      case 1:
+        return "Create orders and review recent transactions";
+      case 2:
+        return "Manage products and quick stock edits";
+      case 3:
+        return "Keep inventory healthy and react fast";
+      case 4:
+        return "Range based performance for sales and revenue";
+      default:
+        return "A dark sales cockpit for your daily business";
+    }
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (notification.depth != 0 || notification.metrics.axis != Axis.vertical) {
+      return false;
+    }
+
+    final isScrolled = notification.metrics.pixels > 10;
+    if (isScrolled == _isHeaderScrolled) {
+      return false;
+    }
+
+    setState(() {
+      _isHeaderScrolled = isScrolled;
+    });
+    return false;
+  }
+
+  Widget _buildPinnedHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(26),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(
+            sigmaX: _isHeaderScrolled ? 18 : 0,
+            sigmaY: _isHeaderScrolled ? 18 : 0,
+          ),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            decoration: BoxDecoration(
+              color: _isHeaderScrolled
+                  ? _background.withAlpha(212)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(26),
+              border: Border.all(
+                color: _isHeaderScrolled
+                    ? Colors.white.withAlpha(18)
+                    : Colors.transparent,
               ),
-              if (subtitle != null) ...[
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: Colors.white.withAlpha(166),
-                    fontSize: 13,
+              boxShadow: _isHeaderScrolled
+                  ? [
+                      const BoxShadow(
+                        color: Color(0x24000000),
+                        blurRadius: 18,
+                        offset: Offset(0, 10),
+                      ),
+                    ]
+                  : const [],
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _currentTabTitle(),
+                        style: const TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _currentTabSubtitle(),
+                        style: TextStyle(
+                          color: Colors.white.withAlpha(166),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  height: 48,
+                  width: 48,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF0E6BBE), Color(0xFF0B4D86)],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  alignment: Alignment.center,
+                  child: IconButton(
+                    onPressed: () => _pushAndRefresh(const SettingsScreen()),
+                    icon: const Icon(
+                      Icons.settings_rounded,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Container(
+                  height: 48,
+                  width: 48,
+                  decoration: BoxDecoration(
+                    color: _surface,
+                    border: Border.all(color: _border),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: IconButton(
+                    onPressed: () => _showMessage("No notifications yet"),
+                    icon: const Icon(Icons.notifications_none_rounded),
                   ),
                 ),
               ],
-            ],
-          ),
-        ),
-        Container(
-          height: 48,
-          width: 48,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF0E6BBE), Color(0xFF0B4D86)],
             ),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          alignment: Alignment.center,
-          child: const Text(
-            "S",
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
           ),
         ),
-        const SizedBox(width: 12),
-        Container(
-          height: 48,
-          width: 48,
-          decoration: BoxDecoration(
-            color: _surface,
-            border: Border.all(color: _border),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: IconButton(
-            onPressed: () => setState(() {
-              _selectedTab = 3;
-            }),
-            icon: const Icon(Icons.notifications_none_rounded),
-          ),
-        ),
-      ],
+      ),
+    );
+  }
+
+  Widget _buildScrollableTab(List<Widget> children) {
+    return NotificationListener<ScrollNotification>(
+      onNotification: _handleScrollNotification,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, _headerReservedSpace, 16, 32),
+        children: children,
+      ),
     );
   }
 
@@ -1075,265 +1182,222 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildDashboardTab() {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-      children: [
-        _buildHeader(
-          "Dashboard",
-          subtitle: "A dark sales cockpit for your daily business",
+    return _buildScrollableTab([
+      _buildPromoCard(),
+      const SizedBox(height: 16),
+      _buildDateRangeCard(),
+      const SizedBox(height: 16),
+      SizedBox(
+        height: 230,
+        child: GridView.count(
+          crossAxisCount: 2,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          physics: const NeverScrollableScrollPhysics(),
+          childAspectRatio: 1.15,
+          children: [
+            _buildMetricCard(
+              label: "Revenue",
+              value: _formatMoney(totalRevenue),
+              icon: Icons.trending_up_rounded,
+              accentColor: const Color(0xFF57D77F),
+            ),
+            _buildMetricCard(
+              label: "Sales",
+              value: "$totalSales",
+              icon: Icons.receipt_long_rounded,
+              accentColor: const Color(0xFF5F95FF),
+            ),
+            _buildMetricCard(
+              label: "Profit",
+              value: _formatMoney(totalProfit),
+              icon: Icons.account_balance_wallet_outlined,
+              accentColor: const Color(0xFFB785FF),
+              caption: totalProfit < 0
+                  ? "Loss in selected range"
+                  : "Selected range",
+            ),
+            _buildMetricCard(
+              label: "Products",
+              value: "$_productCount",
+              icon: Icons.inventory_2_rounded,
+              accentColor: const Color(0xFFFFB43A),
+              caption: "$_lowStockCount low stock - $_outOfStockCount out",
+            ),
+          ],
         ),
-        const SizedBox(height: 18),
-        _buildPromoCard(),
-        const SizedBox(height: 16),
-        _buildDateRangeCard(),
-        const SizedBox(height: 16),
-        SizedBox(
-          height: 230,
-          child: GridView.count(
-            crossAxisCount: 2,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            physics: const NeverScrollableScrollPhysics(),
-            childAspectRatio: 1.15,
-            children: [
-              _buildMetricCard(
-                label: "Revenue",
-                value: _formatMoney(totalRevenue),
-                icon: Icons.trending_up_rounded,
-                accentColor: const Color(0xFF57D77F),
-              ),
-              _buildMetricCard(
-                label: "Sales",
-                value: "$totalSales",
-                icon: Icons.receipt_long_rounded,
-                accentColor: const Color(0xFF5F95FF),
-              ),
-              _buildMetricCard(
-                label: "Profit",
-                value: _formatMoney(totalProfit),
-                icon: Icons.account_balance_wallet_outlined,
-                accentColor: const Color(0xFFB785FF),
-                caption: totalProfit < 0
-                    ? "Loss in selected range"
-                    : "Selected range",
-              ),
-              _buildMetricCard(
-                label: "Products",
-                value: "$_productCount",
-                icon: Icons.inventory_2_rounded,
-                accentColor: const Color(0xFFFFB43A),
-                caption: "$_lowStockCount low stock - $_outOfStockCount out",
-              ),
-            ],
-          ),
+      ),
+      const SizedBox(height: 16),
+      _buildPrimaryActionButton(),
+      const SizedBox(height: 16),
+      _buildPanel(
+        title: "Recent Sales",
+        subtitle: "Latest activity in the business",
+        trailing: TextButton(
+          onPressed: () => _pushAndRefresh(const SalesHistoryScreen()),
+          child: const Text("View all"),
         ),
-        const SizedBox(height: 16),
-        _buildPrimaryActionButton(),
-        const SizedBox(height: 16),
-        _buildPanel(
-          title: "Recent Sales",
-          subtitle: "Latest activity in the business",
-          trailing: TextButton(
-            onPressed: () => _pushAndRefresh(const SalesHistoryScreen()),
-            child: const Text("View all"),
-          ),
-          child: _buildRecentSalesList(recentSales),
-        ),
-        const SizedBox(height: 16),
-        _buildPanel(
-          title: "Top Selling Products",
-          subtitle: "Best movers by units sold",
-          child: _buildTopProductsList(),
-        ),
-      ],
-    );
+        child: _buildRecentSalesList(recentSales),
+      ),
+      const SizedBox(height: 16),
+      _buildPanel(
+        title: "Top Selling Products",
+        subtitle: "Best movers by units sold",
+        child: _buildTopProductsList(),
+      ),
+    ]);
   }
 
   Widget _buildSalesTab() {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-      children: [
-        _buildHeader(
-          "Sales",
-          subtitle: "Create orders and review recent transactions",
+    return _buildScrollableTab([
+      _buildPanel(
+        title: "Quick Actions",
+        child: Column(
+          children: [
+            _buildWideActionTile(
+              title: "Record Sale",
+              subtitle: "Create a new order with discount tools",
+              icon: Icons.shopping_cart_checkout_rounded,
+              color: _accent,
+              onTap: () => _pushAndRefresh(const AddSaleScreen()),
+            ),
+            const SizedBox(height: 12),
+            _buildWideActionTile(
+              title: "Sales History",
+              subtitle: "Filter and review old transactions",
+              icon: Icons.history_rounded,
+              color: const Color(0xFF4B8CFF),
+              onTap: () => _pushAndRefresh(const SalesHistoryScreen()),
+            ),
+          ],
         ),
-        const SizedBox(height: 18),
-        _buildPanel(
-          title: "Quick Actions",
-          child: Column(
-            children: [
-              _buildWideActionTile(
-                title: "Record Sale",
-                subtitle: "Create a new order with discount tools",
-                icon: Icons.shopping_cart_checkout_rounded,
-                color: _accent,
-                onTap: () => _pushAndRefresh(const AddSaleScreen()),
-              ),
-              const SizedBox(height: 12),
-              _buildWideActionTile(
-                title: "Sales History",
-                subtitle: "Filter and review old transactions",
-                icon: Icons.history_rounded,
-                color: const Color(0xFF4B8CFF),
-                onTap: () => _pushAndRefresh(const SalesHistoryScreen()),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        _buildPanel(
-          title: "Recent Sales",
-          subtitle: "Long press in history for more actions",
-          child: _buildRecentSalesList(recentSales),
-        ),
-      ],
-    );
+      ),
+      const SizedBox(height: 16),
+      _buildPanel(
+        title: "Recent Sales",
+        subtitle: "Long press in history for more actions",
+        child: _buildRecentSalesList(recentSales),
+      ),
+    ]);
   }
 
   Widget _buildInventoryTab() {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-      children: [
-        _buildHeader(
-          "Inventory",
-          subtitle: "Manage products and quick stock edits",
+    return _buildScrollableTab([
+      _buildPanel(
+        title: "Inventory Snapshot",
+        child: Row(
+          children: [
+            Expanded(
+              child: _buildMiniMetric(
+                label: "Products",
+                value: "$_productCount",
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildMiniMetric(
+                label: "Low Stock",
+                value: "$_lowStockCount",
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildMiniMetric(label: "Out", value: "$_outOfStockCount"),
+            ),
+          ],
         ),
-        const SizedBox(height: 18),
-        _buildPanel(
-          title: "Inventory Snapshot",
-          child: Row(
-            children: [
-              Expanded(
-                child: _buildMiniMetric(
-                  label: "Products",
-                  value: "$_productCount",
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildMiniMetric(
-                  label: "Low Stock",
-                  value: "$_lowStockCount",
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildMiniMetric(
-                  label: "Out",
-                  value: "$_outOfStockCount",
-                ),
-              ),
-            ],
-          ),
+      ),
+      const SizedBox(height: 16),
+      _buildPanel(
+        title: "Quick Actions",
+        child: Column(
+          children: [
+            _buildWideActionTile(
+              title: "Add Product",
+              subtitle: "Create a new product in inventory",
+              icon: Icons.add_box_outlined,
+              color: const Color(0xFFFFB43A),
+              onTap: () => _pushAndRefresh(const AddProductScreen()),
+            ),
+            const SizedBox(height: 12),
+            _buildWideActionTile(
+              title: "Stock Adjustment",
+              subtitle: "Add, remove or set exact stock values",
+              icon: Icons.tune_rounded,
+              color: const Color(0xFF57D77F),
+              onTap: () => _openStockAdjustment(),
+            ),
+          ],
         ),
-        const SizedBox(height: 16),
-        _buildPanel(
-          title: "Quick Actions",
-          child: Column(
-            children: [
-              _buildWideActionTile(
-                title: "Add Product",
-                subtitle: "Create a new product in inventory",
-                icon: Icons.add_box_outlined,
-                color: const Color(0xFFFFB43A),
-                onTap: () => _pushAndRefresh(const AddProductScreen()),
-              ),
-              const SizedBox(height: 12),
-              _buildWideActionTile(
-                title: "Stock Adjustment",
-                subtitle: "Add, remove or set exact stock values",
-                icon: Icons.tune_rounded,
-                color: const Color(0xFF57D77F),
-                onTap: () => _openStockAdjustment(),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        _buildPanel(
-          title: "Products",
-          subtitle: "Long press any product to edit its stock",
-          child: products.isEmpty
-              ? Text(
-                  "No products added yet",
-                  style: TextStyle(color: Colors.white.withAlpha(179)),
-                )
-              : Column(children: products.map(_buildProductItem).toList()),
-        ),
-      ],
-    );
+      ),
+      const SizedBox(height: 16),
+      _buildPanel(
+        title: "Products",
+        subtitle: "Long press any product to edit its stock",
+        child: products.isEmpty
+            ? Text(
+                "No products added yet",
+                style: TextStyle(color: Colors.white.withAlpha(179)),
+              )
+            : Column(children: products.map(_buildProductItem).toList()),
+      ),
+    ]);
   }
 
   Widget _buildStockTab() {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-      children: [
-        _buildHeader(
-          "Stock Control",
-          subtitle: "Keep inventory healthy and react fast",
+    return _buildScrollableTab([
+      _buildPanel(
+        title: "Adjust Stock",
+        subtitle: "Open the stock editor for manual updates",
+        child: _buildWideActionTile(
+          title: "Open Stock Adjustment",
+          subtitle: "Add, remove or set exact stock",
+          icon: Icons.inventory_2_outlined,
+          color: _accent,
+          onTap: () => _openStockAdjustment(),
         ),
-        const SizedBox(height: 18),
-        _buildPanel(
-          title: "Adjust Stock",
-          subtitle: "Open the stock editor for manual updates",
-          child: _buildWideActionTile(
-            title: "Open Stock Adjustment",
-            subtitle: "Add, remove or set exact stock",
-            icon: Icons.inventory_2_outlined,
-            color: _accent,
-            onTap: () => _openStockAdjustment(),
-          ),
-        ),
-        const SizedBox(height: 16),
-        _buildPanel(
-          title: "Products Needing Attention",
-          subtitle: "Tap adjust to change stock quickly",
-          child: _buildStockActionList(_lowStockProducts),
-        ),
-      ],
-    );
+      ),
+      const SizedBox(height: 16),
+      _buildPanel(
+        title: "Products Needing Attention",
+        subtitle: "Tap adjust to change stock quickly",
+        child: _buildStockActionList(_lowStockProducts),
+      ),
+    ]);
   }
 
   Widget _buildReportsTab() {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-      children: [
-        _buildHeader(
-          "Reports",
-          subtitle: "Range based performance for sales and revenue",
-        ),
-        const SizedBox(height: 18),
-        _buildDateRangeCard(),
-        const SizedBox(height: 16),
-        _buildPanel(
-          title: "Revenue Trend",
-          subtitle: "Selected range",
-          child: _buildReportsChart(),
-        ),
-        const SizedBox(height: 16),
-        _buildPanel(
-          title: "Range Summary",
-          child: Column(
-            children: [
-              _buildSummaryRow("Revenue", _formatMoney(totalRevenue)),
-              const SizedBox(height: 10),
-              _buildSummaryRow("Profit", _formatMoney(totalProfit)),
-              const SizedBox(height: 10),
-              _buildSummaryRow("Sales Count", "$totalSales"),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () => _pushAndRefresh(const SalesHistoryScreen()),
-                  icon: const Icon(Icons.analytics_outlined),
-                  label: const Text("Open Sales History"),
-                ),
+    return _buildScrollableTab([
+      _buildDateRangeCard(),
+      const SizedBox(height: 16),
+      _buildPanel(
+        title: "Revenue Trend",
+        subtitle: "Selected range",
+        child: _buildReportsChart(),
+      ),
+      const SizedBox(height: 16),
+      _buildPanel(
+        title: "Range Summary",
+        child: Column(
+          children: [
+            _buildSummaryRow("Revenue", _formatMoney(totalRevenue)),
+            const SizedBox(height: 10),
+            _buildSummaryRow("Profit", _formatMoney(totalProfit)),
+            const SizedBox(height: 10),
+            _buildSummaryRow("Sales Count", "$totalSales"),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _pushAndRefresh(const SalesHistoryScreen()),
+                icon: const Icon(Icons.analytics_outlined),
+                label: const Text("Open Sales History"),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
-      ],
-    );
+      ),
+    ]);
   }
 
   @override
@@ -1341,9 +1405,19 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: _background,
       body: SafeArea(
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 260),
-          child: _buildTabContent(),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 260),
+                child: KeyedSubtree(
+                  key: ValueKey(_selectedTab),
+                  child: _buildTabContent(),
+                ),
+              ),
+            ),
+            Positioned(left: 0, right: 0, top: 0, child: _buildPinnedHeader()),
+          ],
         ),
       ),
       bottomNavigationBar: NavigationBar(
@@ -1355,6 +1429,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onDestinationSelected: (index) {
           setState(() {
             _selectedTab = index;
+            _isHeaderScrolled = false;
           });
         },
         destinations: const [

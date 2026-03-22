@@ -1,15 +1,18 @@
+import 'dart:io';
+
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
+  static const _databaseName = 'sales.db';
 
   DatabaseHelper._init();
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('sales.db');
+    _database = await _initDB(_databaseName);
     return _database!;
   }
 
@@ -19,7 +22,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -49,6 +52,13 @@ class DatabaseHelper {
         selling_price REAL
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE app_settings(
+        key TEXT PRIMARY KEY,
+        value TEXT
+      )
+    ''');
   }
 
   Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
@@ -67,6 +77,15 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE sales ADD COLUMN selling_price REAL');
       }
     }
+
+    if (oldVersion < 3) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS app_settings(
+          key TEXT PRIMARY KEY,
+          value TEXT
+        )
+      ''');
+    }
   }
 
   Future<int> insertProduct(Map<String, dynamic> row) async {
@@ -77,6 +96,59 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getProducts() async {
     final db = await instance.database;
     return await db.query('products');
+  }
+
+  Future<void> saveAppSetting(String key, String value) async {
+    final db = await instance.database;
+    await db.insert('app_settings', {
+      'key': key,
+      'value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<String?> getAppSetting(String key) async {
+    final db = await instance.database;
+    final result = await db.query(
+      'app_settings',
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: [key],
+      limit: 1,
+    );
+
+    if (result.isEmpty) return null;
+    return result.first['value']?.toString();
+  }
+
+  Future<Map<String, String>> getStoreDetails() async {
+    final keys = [
+      'store_name',
+      'store_owner',
+      'store_phone',
+      'store_email',
+      'store_address',
+      'store_tax_id',
+      'invoice_prefix',
+      'invoice_note',
+    ];
+
+    final details = <String, String>{};
+    for (final key in keys) {
+      details[key] = await getAppSetting(key) ?? '';
+    }
+    return details;
+  }
+
+  Future<void> saveStoreDetails(Map<String, String> details) async {
+    final db = await instance.database;
+    await db.transaction((txn) async {
+      for (final entry in details.entries) {
+        await txn.insert('app_settings', {
+          'key': entry.key,
+          'value': entry.value,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+    });
   }
 
   Future<int> insertSale(Map<String, dynamic> row) async {
@@ -93,8 +165,8 @@ class DatabaseHelper {
       whereArgs: [productId],
     );
   }
-  Future<Map<String, dynamic>?> findProduct(
-      String name, double price) async {
+
+  Future<Map<String, dynamic>?> findProduct(String name, double price) async {
     final db = await instance.database;
 
     final result = await db.query(
@@ -108,8 +180,8 @@ class DatabaseHelper {
     }
     return null;
   }
-  Future<List<Map<String, dynamic>>> findByName(
-      String name) async {
+
+  Future<List<Map<String, dynamic>>> findByName(String name) async {
     final db = await instance.database;
 
     return await db.query(
@@ -118,14 +190,12 @@ class DatabaseHelper {
       whereArgs: ['$name%'],
     );
   }
+
   Future<void> deleteProduct(int id) async {
     final db = await instance.database;
-    await db.delete(
-      'products',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await db.delete('products', where: 'id = ?', whereArgs: [id]);
   }
+
   Future<List<Map<String, dynamic>>> getSalesWithProduct() async {
     final db = await instance.database;
 
@@ -247,11 +317,7 @@ class DatabaseHelper {
     final db = await instance.database;
 
     // Get sale details first
-    final sale = await db.query(
-      'sales',
-      where: 'id = ?',
-      whereArgs: [saleId],
-    );
+    final sale = await db.query('sales', where: 'id = ?', whereArgs: [saleId]);
 
     if (sale.isNotEmpty) {
       final s = sale.first;
@@ -278,12 +344,9 @@ class DatabaseHelper {
       }
     }
 
-    await db.delete(
-      'sales',
-      where: 'id = ?',
-      whereArgs: [saleId],
-    );
+    await db.delete('sales', where: 'id = ?', whereArgs: [saleId]);
   }
+
   Future<Map<String, dynamic>> getTodaySummary() async {
     final db = await instance.database;
 
@@ -291,7 +354,8 @@ class DatabaseHelper {
     final todayString =
         "${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}";
 
-    final result = await db.rawQuery('''
+    final result = await db.rawQuery(
+      '''
       SELECT 
         COUNT(*) as total_sales,
         SUM(total) as total_revenue,
@@ -310,15 +374,21 @@ class DatabaseHelper {
       LEFT JOIN products
         ON sales.product_id = products.id
       WHERE sales.date LIKE ?
-    ''', ['$todayString%']);
+    ''',
+      ['$todayString%'],
+    );
 
     return result.first;
   }
+
   Future<List<Map<String, dynamic>>> getSalesByDateRange(
-      String startDate, String endDate) async {
+    String startDate,
+    String endDate,
+  ) async {
     final db = await instance.database;
 
-    return await db.rawQuery('''
+    return await db.rawQuery(
+      '''
       SELECT 
         sales.id,
         sales.product_id,
@@ -348,8 +418,11 @@ class DatabaseHelper {
         ON sales.product_id = products.id
       WHERE sales.date BETWEEN ? AND ?
       ORDER BY sales.id DESC
-    ''', [startDate, endDate]);
+    ''',
+      [startDate, endDate],
+    );
   }
+
   Future<List<Map<String, dynamic>>> getDailyRevenue() async {
     final db = await instance.database;
 
@@ -362,8 +435,40 @@ class DatabaseHelper {
       ORDER BY day
     ''');
   }
+
+  Future<void> closeDatabase() async {
+    if (_database == null) return;
+    await _database!.close();
+    _database = null;
+  }
+
+  Future<String> getRawDatabasePath() async {
+    final dbPath = await getDatabasesPath();
+    return join(dbPath, _databaseName);
+  }
+
   Future<String> getDatabasePath() async {
     final db = await instance.database;
     return db.path;
+  }
+
+  Future<File> createBackup(String targetPath) async {
+    final dbPath = await getRawDatabasePath();
+    final dbFile = File(dbPath);
+    return dbFile.copy(targetPath);
+  }
+
+  Future<void> restoreDatabaseFromFile(String sourcePath) async {
+    final destinationPath = await getRawDatabasePath();
+    await closeDatabase();
+
+    final sourceFile = File(sourcePath);
+    final destinationFile = File(destinationPath);
+
+    if (await destinationFile.exists()) {
+      await destinationFile.delete();
+    }
+
+    await sourceFile.copy(destinationPath);
   }
 }
