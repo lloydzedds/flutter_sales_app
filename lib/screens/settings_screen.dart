@@ -67,10 +67,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final backupFile = await DatabaseHelper.instance.createBackup(backupPath);
 
       await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(backupFile.path)],
-          text: "Sales Manager backup",
-        ),
+        ShareParams(files: [XFile(backupFile.path)], text: "Sale Buddy backup"),
       );
 
       if (!mounted) return;

@@ -70,7 +70,7 @@ class SaleBillService {
             pw.Text(
               storeDetails['store_name']?.trim().isNotEmpty == true
                   ? storeDetails['store_name']!.trim()
-                  : 'Sales Manager',
+                  : 'Sale Buddy',
               style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 4),

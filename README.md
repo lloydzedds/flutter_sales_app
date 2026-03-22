@@ -1,4 +1,4 @@
-# flutter_application_1
+# Sale Buddy
 
 A new Flutter project.
 

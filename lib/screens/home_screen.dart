@@ -539,7 +539,7 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  "Sales Manager Dashboard",
+                  "Sale Buddy / My Accounts",
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
                 ),
                 SizedBox(height: 4),

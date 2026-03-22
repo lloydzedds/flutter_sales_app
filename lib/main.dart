@@ -25,7 +25,7 @@ class MyApp extends StatelessWidget {
       animation: controller,
       builder: (context, _) {
         return MaterialApp(
-          title: 'Sales Manager',
+          title: 'Sale Buddy',
           debugShowCheckedModeBanner: false,
           themeMode: controller.themeMode,
           theme: _buildLightTheme(),
