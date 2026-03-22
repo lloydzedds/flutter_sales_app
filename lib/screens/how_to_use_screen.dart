@@ -79,7 +79,7 @@ class HowToUseScreen extends StatelessWidget {
             icon: Icons.history_rounded,
             title: "Sales History",
             description:
-                "Sales History lets you filter by date, review full orders, open sale details, edit old sales, delete a sale, export CSV, and share bill PDFs for past purchases.",
+                "Sales History lets you filter by date, review full orders, record product returns, open sale details, edit old sales, delete a sale, export CSV, and share bill PDFs for past purchases.",
           ),
           _stepCard(
             icon: Icons.settings_outlined,

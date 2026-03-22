@@ -11,6 +11,7 @@ import '../database/database_helper.dart';
 import '../services/sale_bill_service.dart';
 import '../services/sales_export_service.dart';
 import 'add_sale_screen.dart';
+import 'record_return_screen.dart';
 
 enum _CsvExportScope { customDates, pastMonth, everything }
 
@@ -143,6 +144,10 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     }
     return "Showing only orders from ${_formatSectionDate(selectedDate!)}";
   }
+
+  bool _hasReturns(Map<String, dynamic> order) =>
+      _asDouble(order['returned_total']) > 0 ||
+      _asInt(order['return_count']) > 0;
 
   Map<String, dynamic> _visibleSummary() {
     double revenue = 0;
@@ -543,6 +548,13 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     return DatabaseHelper.instance.getSaleItemsForGroupKey(groupKey);
   }
 
+  Future<List<Map<String, dynamic>>> _loadReturnRows(
+    Map<String, dynamic> order,
+  ) async {
+    final groupKey = order['group_key']?.toString() ?? 'legacy-${order['id']}';
+    return DatabaseHelper.instance.getSaleReturnsForGroupKey(groupKey);
+  }
+
   Future<void> _shareBill(Map<String, dynamic> order) async {
     setState(() {
       _isBusy = true;
@@ -568,16 +580,28 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
 
   Future<void> deleteOrder(Map<String, dynamic> order) async {
     final groupKey = order['group_key']?.toString() ?? 'legacy-${order['id']}';
-    await DatabaseHelper.instance.deleteSaleOrder(groupKey);
-    if (!mounted) return;
+    try {
+      await DatabaseHelper.instance.deleteSaleOrder(groupKey);
+      if (!mounted) return;
 
-    await loadOrders(filterDate: selectedDate);
-    if (!mounted) return;
+      await loadOrders(filterDate: selectedDate);
+      if (!mounted) return;
 
-    _showMessage("Sale deleted");
+      _showMessage("Sale deleted");
+    } catch (error) {
+      if (!mounted) return;
+      _showMessage(error.toString().replaceFirst('Exception: ', ''));
+    }
   }
 
   Future<void> _editSale(Map<String, dynamic> order) async {
+    if (_hasReturns(order)) {
+      _showMessage(
+        "This sale already has returns recorded, so editing is disabled.",
+      );
+      return;
+    }
+
     final updated = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => AddSaleScreen(existingSale: order)),
     );
@@ -588,12 +612,29 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     _showMessage("Sale updated");
   }
 
+  Future<void> _recordReturn(Map<String, dynamic> order) async {
+    final recorded = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => RecordReturnScreen(order: order)),
+    );
+    if (!mounted || recorded != true) return;
+
+    await loadOrders(filterDate: selectedDate);
+    if (!mounted) return;
+    _showMessage("Return recorded");
+  }
+
   Future<void> _showOrderDetails(Map<String, dynamic> order) async {
     final items = await _loadOrderItems(order);
+    final returns = await _loadReturnRows(order);
     if (!mounted) return;
 
     final profit = _asDouble(order['profit']);
     final colorScheme = Theme.of(context).colorScheme;
+    final returnedTotal = _asDouble(order['returned_total']);
+    final returnedUnits = returns.fold<int>(
+      0,
+      (sum, row) => sum + _asInt(row['units']),
+    );
 
     await showModalBottomSheet<void>(
       context: context,
@@ -641,7 +682,19 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                   "Units",
                   "${_asInt(order['total_units'])} units",
                 ),
-                _buildDetailRow("Total", _formatCurrency(order['total'])),
+                if (_hasReturns(order)) ...[
+                  _buildDetailRow(
+                    "Gross Total",
+                    _formatCurrency(order['gross_total']),
+                  ),
+                  _buildDetailRow(
+                    "Returned",
+                    "${_formatCurrency(returnedTotal)} • $returnedUnits unit(s)",
+                    valueColor: colorScheme.tertiary,
+                  ),
+                  _buildDetailRow("Net Total", _formatCurrency(order['total'])),
+                ] else
+                  _buildDetailRow("Total", _formatCurrency(order['total'])),
                 _buildDetailRow(
                   "Payment Status",
                   _paymentStatusLabel(order['payment_status']),
@@ -704,7 +757,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                           children: [
                             _OrderChip(
                               label: "Qty",
-                              value: "${_asInt(item['units'])}",
+                              value: "${_asInt(item['net_units'])}",
                             ),
                             _OrderChip(
                               label: "SP",
@@ -718,13 +771,76 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                               label: "Total",
                               value: _formatCurrency(item['total']),
                             ),
+                            if (_asDouble(item['returned_total']) > 0)
+                              _OrderChip(
+                                label: "Returned",
+                                value: _formatCurrency(item['returned_total']),
+                                valueColor: colorScheme.tertiary,
+                              ),
                           ],
                         ),
                       ],
                     ),
                   );
                 }),
+                if (returns.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  const Text(
+                    "Returns",
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                  ),
+                  const SizedBox(height: 10),
+                  ...returns.map((entry) {
+                    final restocked = _asInt(entry['restocked']) == 1;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: colorScheme.error.withAlpha(10),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            entry['product_name']?.toString() ?? 'Product',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            "Qty ${_asInt(entry['units'])} • Refund ${_formatCurrency(entry['refund_amount'])}",
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            "${restocked ? 'Restocked' : 'Not restocked'} • ${entry['date']?.toString() ?? '--'}",
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          if (entry['reason']?.toString().trim().isNotEmpty ==
+                              true) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              entry['reason'].toString().trim(),
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  }),
+                ],
                 const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      Navigator.of(sheetContext).pop();
+                      await _recordReturn(order);
+                    },
+                    icon: const Icon(Icons.assignment_return_outlined),
+                    label: const Text("Record Return"),
+                  ),
+                ),
+                const SizedBox(height: 10),
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
@@ -801,6 +917,11 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                 onTap: () => Navigator.of(sheetContext).pop('bill'),
               ),
               ListTile(
+                leading: const Icon(Icons.assignment_return_outlined),
+                title: const Text("Record return"),
+                onTap: () => Navigator.of(sheetContext).pop('return'),
+              ),
+              ListTile(
                 leading: const Icon(Icons.edit_outlined),
                 title: const Text("Edit sale"),
                 onTap: () => Navigator.of(sheetContext).pop('edit'),
@@ -826,6 +947,9 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
         return;
       case 'bill':
         await _shareBill(order);
+        return;
+      case 'return':
+        await _recordReturn(order);
         return;
       case 'edit':
         await _editSale(order);
@@ -1327,6 +1451,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     final resultColor = profit < 0 ? colorScheme.error : colorScheme.secondary;
     final paymentColor = _paymentStatusColor(context, order['payment_status']);
     final dueAmount = _asDouble(order['due_amount']);
+    final returnedTotal = _asDouble(order['returned_total']);
 
     return Container(
       margin: const EdgeInsets.only(top: 12),
@@ -1414,6 +1539,12 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                     value: _paymentStatusLabel(order['payment_status']),
                     valueColor: paymentColor,
                   ),
+                  if (returnedTotal > 0)
+                    _OrderChip(
+                      label: "Returned",
+                      value: _formatCurrency(returnedTotal),
+                      valueColor: colorScheme.tertiary,
+                    ),
                   if (dueAmount > 0)
                     _OrderChip(
                       label: "Due",
@@ -1430,7 +1561,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
               ),
               const SizedBox(height: 10),
               Text(
-                "Tap for details. Long press for bill, edit, or delete.",
+                "Tap for details. Long press for bill, return, edit, or delete.",
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
@@ -1466,7 +1597,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     return _buildPanel(
       title: "Orders Timeline",
       subtitle:
-          "Tap an order for details. Long press to share bill, edit, or delete",
+          "Tap an order for details. Long press to share bill, return, edit, or delete",
       child: Column(
         children: sections.map((section) {
           return Padding(

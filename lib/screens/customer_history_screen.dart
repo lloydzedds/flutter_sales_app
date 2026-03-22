@@ -5,6 +5,7 @@ import '../database/database_helper.dart';
 import '../services/sale_bill_service.dart';
 import 'add_sale_screen.dart';
 import 'edit_customer_screen.dart';
+import 'record_return_screen.dart';
 
 class CustomerHistoryScreen extends StatefulWidget {
   const CustomerHistoryScreen({super.key, required this.customer});
@@ -97,6 +98,10 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
     return DateFormat('d MMM yyyy, h:mm a').format(date);
   }
 
+  bool _hasReturns(Map<String, dynamic> order) =>
+      _asDouble(order['returned_total']) > 0 ||
+      _asInt(order['return_count']) > 0;
+
   Future<void> _loadOrders() async {
     final rows = await DatabaseHelper.instance.getCustomerSaleOrders(
       _asInt(_customer['id']),
@@ -135,6 +140,13 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
     return DatabaseHelper.instance.getSaleItemsForGroupKey(groupKey);
   }
 
+  Future<List<Map<String, dynamic>>> _loadReturnRows(
+    Map<String, dynamic> order,
+  ) {
+    final groupKey = order['group_key']?.toString() ?? 'legacy-${order['id']}';
+    return DatabaseHelper.instance.getSaleReturnsForGroupKey(groupKey);
+  }
+
   Future<void> _shareBill(Map<String, dynamic> order) async {
     setState(() {
       _isBusy = true;
@@ -152,8 +164,17 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
     }
   }
 
+  Future<void> _recordReturn(Map<String, dynamic> order) async {
+    final recorded = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => RecordReturnScreen(order: order)),
+    );
+    if (!mounted || recorded != true) return;
+    await _loadOrders();
+  }
+
   Future<void> _showOrderDetails(Map<String, dynamic> order) async {
     final items = await _loadOrderItems(order);
+    final returns = await _loadReturnRows(order);
     if (!mounted) return;
 
     await showModalBottomSheet<void>(
@@ -237,12 +258,70 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          "Qty ${_asInt(item['units'])} • SP ${_formatCurrency(item['selling_price'])} • Discount ${_formatCurrency(item['discount'])} • Total ${_formatCurrency(item['total'])}",
+                          "Qty ${_asInt(item['net_units'])} • SP ${_formatCurrency(item['selling_price'])} • Discount ${_formatCurrency(item['discount'])} • Total ${_formatCurrency(item['total'])}",
                         ),
+                        if (_asDouble(item['returned_total']) > 0) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            "Returned ${_formatCurrency(item['returned_total'])}",
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
                       ],
                     ),
                   );
                 }),
+                if (returns.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  const Text(
+                    "Returns",
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 10),
+                  ...returns.map((entry) {
+                    final restocked = _asInt(entry['restocked']) == 1;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.error.withAlpha(10),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            entry['product_name']?.toString() ?? 'Product',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            "Qty ${_asInt(entry['units'])} • Refund ${_formatCurrency(entry['refund_amount'])}",
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            "${restocked ? 'Restocked' : 'Not restocked'} • ${entry['date']?.toString() ?? '--'}",
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      Navigator.of(sheetContext).pop();
+                      await _recordReturn(order);
+                    },
+                    icon: const Icon(Icons.assignment_return_outlined),
+                    label: const Text("Record Return"),
+                  ),
+                ),
                 const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
@@ -264,6 +343,17 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
   }
 
   Future<void> _editOrder(Map<String, dynamic> order) async {
+    if (_hasReturns(order)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "This sale already has returns recorded, so editing is disabled.",
+          ),
+        ),
+      );
+      return;
+    }
+
     final updated = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => AddSaleScreen(existingSale: order)),
     );
@@ -278,6 +368,7 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
         : Theme.of(context).colorScheme.secondary;
     final paymentColor = _paymentStatusColor(context, order['payment_status']);
     final dueAmount = _asDouble(order['due_amount']);
+    final returnedTotal = _asDouble(order['returned_total']);
     final productPreview =
         order['product_names']?.toString().trim().isNotEmpty == true
         ? order['product_names'].toString().trim()
@@ -349,6 +440,12 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
                     value: _paymentStatusLabel(order['payment_status']),
                     valueColor: paymentColor,
                   ),
+                  if (returnedTotal > 0)
+                    _CustomerOrderChip(
+                      label: "Returned",
+                      value: _formatCurrency(returnedTotal),
+                      valueColor: Theme.of(context).colorScheme.tertiary,
+                    ),
                   if (dueAmount > 0)
                     _CustomerOrderChip(
                       label: "Due",
@@ -373,6 +470,18 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
                       onPressed: () => _editOrder(order),
                       icon: const Icon(Icons.edit_outlined),
                       label: const Text("Edit"),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _recordReturn(order),
+                      icon: const Icon(Icons.assignment_return_outlined),
+                      label: const Text("Return"),
                     ),
                   ),
                   const SizedBox(width: 12),

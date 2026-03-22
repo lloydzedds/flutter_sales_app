@@ -170,7 +170,8 @@ class _HomeScreenState extends State<HomeScreen> {
       final entry = totals.putIfAbsent(name, () {
         return {'name': name, 'units': 0, 'revenue': 0.0};
       });
-      entry['units'] = _asInt(entry['units']) + _asInt(sale['units']);
+      entry['units'] =
+          _asInt(entry['units']) + _asInt(sale['net_units'] ?? sale['units']);
       entry['revenue'] = _asDouble(entry['revenue']) + _asDouble(sale['total']);
     }
 
@@ -962,7 +963,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      "Units ${sale['units']} - ${sale['date']}",
+                      "Units ${sale['net_units'] ?? sale['units']} - ${sale['date']}",
                       style: TextStyle(
                         color: Colors.white.withAlpha(158),
                         fontSize: 12,

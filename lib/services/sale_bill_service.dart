@@ -146,7 +146,7 @@ class SaleBillService {
                   _asInt(item['units']).toString(),
                   _formatCurrency(item['selling_price']),
                   _formatCurrency(item['discount']),
-                  _formatCurrency(item['total']),
+                  _formatCurrency(item['gross_total'] ?? item['total']),
                 ];
               }).toList(),
             ),
@@ -173,8 +173,18 @@ class SaleBillService {
                     ),
                     pw.SizedBox(height: 4),
                     pw.Text(
-                      'Amount to Pay: ${_formatCurrency(order['total'])}',
+                      'Amount to Pay: ${_formatCurrency(order['gross_total'] ?? order['total'])}',
                     ),
+                    if (_asDouble(order['returned_total']) > 0) ...[
+                      pw.SizedBox(height: 4),
+                      pw.Text(
+                        'Returned: ${_formatCurrency(order['returned_total'])}',
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Text(
+                        'Net After Returns: ${_formatCurrency(order['total'])}',
+                      ),
+                    ],
                     pw.SizedBox(height: 4),
                     pw.Text(
                       'Amount Received: ${_formatCurrency(order['amount_paid'])}',

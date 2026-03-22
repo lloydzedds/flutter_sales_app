@@ -108,7 +108,7 @@ class SalesExportService {
   }) async {
     final directory = targetDirectory ?? await ensureLocalSaleDirectory();
     final csv = StringBuffer(
-      "Bill No,Customer,Phone,Product,Units,Selling Price,Discount,Total,Profit,Payment Status,Payment Method,Amount Paid,Due Amount,Date\n",
+      "Bill No,Customer,Phone,Product,Units,Returned Units,Selling Price,Discount,Net Total,Returned Amount,Net Profit,Payment Status,Payment Method,Amount Paid,Due Amount,Date\n",
     );
 
     for (final row in rows) {
@@ -119,9 +119,11 @@ class SalesExportService {
           _csvCell(row['customer_phone']),
           _csvCell(row['product_name']),
           _csvCell(row['units']),
+          _csvCell(row['returned_units']),
           _csvCell(_formatAmount(_asDouble(row['selling_price']))),
           _csvCell(_formatAmount(_asDouble(row['discount']))),
           _csvCell(_formatAmount(_asDouble(row['total']))),
+          _csvCell(_formatAmount(_asDouble(row['returned_total']))),
           _csvCell(_formatAmount(_asDouble(row['profit']))),
           _csvCell(_paymentStatusLabel(row['payment_status'])),
           _csvCell(row['payment_method']),
@@ -190,9 +192,10 @@ class SalesExportService {
                 4: const pw.FlexColumnWidth(0.7),
                 5: const pw.FlexColumnWidth(0.9),
                 6: const pw.FlexColumnWidth(0.9),
-                7: const pw.FlexColumnWidth(1.5),
-                8: const pw.FlexColumnWidth(0.9),
-                9: const pw.FlexColumnWidth(1.2),
+                7: const pw.FlexColumnWidth(0.9),
+                8: const pw.FlexColumnWidth(1.5),
+                9: const pw.FlexColumnWidth(0.9),
+                10: const pw.FlexColumnWidth(1.2),
               },
               headers: const [
                 'Bill No',
@@ -200,6 +203,7 @@ class SalesExportService {
                 'Products',
                 'Items',
                 'Units',
+                'Returned',
                 'Amount',
                 'Due',
                 'Payment',
@@ -219,6 +223,7 @@ class SalesExportService {
                   order['product_names']?.toString() ?? '',
                   _asInt(order['item_count']).toString(),
                   _asInt(order['total_units']).toString(),
+                  _formatCurrency(order['returned_total']),
                   _formatCurrency(order['total']),
                   _formatCurrency(order['due_amount']),
                   '${_paymentStatusLabel(order['payment_status'])} • ${order['payment_method']?.toString().trim().isNotEmpty == true ? order['payment_method'].toString().trim() : 'Cash'}',

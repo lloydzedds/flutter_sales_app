@@ -9,7 +9,7 @@ class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
   static const _databaseName = 'sales.db';
-  static const _databaseVersion = 6;
+  static const _databaseVersion = 7;
   static const _groupKeyExpr =
       "COALESCE(sales.sale_group_id, 'legacy-' || CAST(sales.id AS TEXT))";
 
@@ -81,6 +81,30 @@ class DatabaseHelper {
     ''');
 
     await db.execute('''
+      CREATE TABLE sale_returns(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        return_group_id TEXT,
+        sale_group_key TEXT NOT NULL,
+        sale_id INTEGER NOT NULL,
+        bill_number TEXT,
+        customer_id INTEGER,
+        customer_name TEXT,
+        customer_phone TEXT,
+        product_id INTEGER,
+        product_name TEXT,
+        units INTEGER NOT NULL,
+        discount REAL NOT NULL,
+        refund_amount REAL NOT NULL,
+        profit_adjustment REAL NOT NULL,
+        cost_price REAL,
+        selling_price REAL,
+        date TEXT NOT NULL,
+        reason TEXT,
+        restocked INTEGER NOT NULL DEFAULT 1
+      )
+    ''');
+
+    await db.execute('''
       CREATE TABLE app_settings(
         key TEXT PRIMARY KEY,
         value TEXT
@@ -140,6 +164,32 @@ class DatabaseHelper {
         'amount_paid': 'ALTER TABLE sales ADD COLUMN amount_paid REAL',
         'due_amount': 'ALTER TABLE sales ADD COLUMN due_amount REAL',
       });
+    }
+
+    if (oldVersion < 7) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS sale_returns(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          return_group_id TEXT,
+          sale_group_key TEXT NOT NULL,
+          sale_id INTEGER NOT NULL,
+          bill_number TEXT,
+          customer_id INTEGER,
+          customer_name TEXT,
+          customer_phone TEXT,
+          product_id INTEGER,
+          product_name TEXT,
+          units INTEGER NOT NULL,
+          discount REAL NOT NULL,
+          refund_amount REAL NOT NULL,
+          profit_adjustment REAL NOT NULL,
+          cost_price REAL,
+          selling_price REAL,
+          date TEXT NOT NULL,
+          reason TEXT,
+          restocked INTEGER NOT NULL DEFAULT 1
+        )
+      ''');
     }
   }
 
@@ -566,6 +616,164 @@ class DatabaseHelper {
     }
   }
 
+  Future<Map<int, int>> _returnedUnitsBySaleIdTxn(
+    Transaction txn,
+    String groupKey,
+  ) async {
+    final rows = await txn.rawQuery(
+      '''
+      SELECT sale_id, SUM(units) AS returned_units
+      FROM sale_returns
+      WHERE sale_group_key = ?
+      GROUP BY sale_id
+    ''',
+      [groupKey],
+    );
+
+    final returnedUnits = <int, int>{};
+    for (final row in rows) {
+      returnedUnits[_asInt(row['sale_id'])] = _asInt(row['returned_units']);
+    }
+    return returnedUnits;
+  }
+
+  Future<bool> hasReturnsForGroupKey(String groupKey) async {
+    final db = await instance.database;
+    final rows = await db.rawQuery(
+      '''
+      SELECT COUNT(*) AS count
+      FROM sale_returns
+      WHERE sale_group_key = ?
+      LIMIT 1
+    ''',
+      [groupKey],
+    );
+    return _asInt(rows.first['count']) > 0;
+  }
+
+  Future<void> recordSaleReturn({
+    required String groupKey,
+    required List<Map<String, dynamic>> items,
+    bool restock = true,
+    String? reason,
+  }) async {
+    final db = await instance.database;
+    final returnDate = _nowStamp();
+    final returnGroupId = 'return-${DateTime.now().microsecondsSinceEpoch}';
+    final cleanReason = _trim(reason);
+
+    await db.transaction((txn) async {
+      final saleRows = await _loadSaleRowsForGroupKeyTxn(txn, groupKey);
+      if (saleRows.isEmpty) {
+        throw Exception('Sale not found');
+      }
+
+      if (items.isEmpty) {
+        throw Exception('Select at least one product to return');
+      }
+
+      final saleRowsById = <int, Map<String, dynamic>>{};
+      for (final row in saleRows) {
+        saleRowsById[_asInt(row['id'])] = row;
+      }
+
+      final returnedUnitsBySaleId = await _returnedUnitsBySaleIdTxn(
+        txn,
+        groupKey,
+      );
+      final stockToRestore = <int, int>{};
+
+      for (final item in items) {
+        final saleId = _asInt(item['sale_id']);
+        final returnUnits = _asInt(item['units']);
+        if (returnUnits <= 0) {
+          continue;
+        }
+
+        final saleRow = saleRowsById[saleId];
+        if (saleRow == null) {
+          throw Exception('The selected sale item no longer exists');
+        }
+
+        final soldUnits = _asInt(saleRow['units']);
+        final alreadyReturned = returnedUnitsBySaleId[saleId] ?? 0;
+        final remainingUnits = soldUnits - alreadyReturned;
+        final productName =
+            _trim(saleRow['product_name']?.toString()).isNotEmpty
+            ? _trim(saleRow['product_name']?.toString())
+            : 'Product';
+
+        if (returnUnits > remainingUnits) {
+          throw Exception(
+            'You can return only $remainingUnits unit(s) of $productName',
+          );
+        }
+
+        final productId = _asInt(saleRow['product_id']);
+        final discount = _asDouble(saleRow['discount']);
+        final sellingPrice = _asDouble(saleRow['selling_price']);
+        final costPrice = _asDouble(saleRow['cost_price']);
+        final soldPrice = sellingPrice - discount;
+        final refundAmount = soldPrice * returnUnits;
+        final originalProfitPortion = (soldPrice - costPrice) * returnUnits;
+        final profitAdjustment = restock ? originalProfitPortion : refundAmount;
+
+        await txn.insert('sale_returns', {
+          'return_group_id': returnGroupId,
+          'sale_group_key': groupKey,
+          'sale_id': saleId,
+          'bill_number': saleRow['bill_number']?.toString(),
+          'customer_id': saleRow['customer_id'],
+          'customer_name': saleRow['customer_name']?.toString(),
+          'customer_phone': saleRow['customer_phone']?.toString(),
+          'product_id': productId,
+          'product_name': saleRow['product_name']?.toString(),
+          'units': returnUnits,
+          'discount': discount,
+          'refund_amount': refundAmount,
+          'profit_adjustment': profitAdjustment,
+          'cost_price': costPrice,
+          'selling_price': sellingPrice,
+          'date': returnDate,
+          'reason': cleanReason.isEmpty ? null : cleanReason,
+          'restocked': restock ? 1 : 0,
+        });
+
+        if (restock) {
+          stockToRestore[productId] =
+              (stockToRestore[productId] ?? 0) + returnUnits;
+        }
+      }
+
+      if (stockToRestore.isEmpty || !restock) {
+        return;
+      }
+
+      for (final entry in stockToRestore.entries) {
+        final product = await txn.query(
+          'products',
+          where: 'id = ?',
+          whereArgs: [entry.key],
+          limit: 1,
+        );
+
+        if (product.isEmpty) {
+          throw Exception(
+            'The original product was deleted, so stock cannot be restored',
+          );
+        }
+
+        final currentStock = _asInt(product.first['stock']);
+        await txn.update(
+          'products',
+          {'stock': currentStock + entry.value},
+          where: 'id = ?',
+          whereArgs: [entry.key],
+        );
+      }
+    });
+  }
+
   Future<String> createSaleOrder({
     required List<Map<String, dynamic>> items,
     String? customerName,
@@ -642,6 +850,13 @@ class DatabaseHelper {
     final db = await instance.database;
 
     await db.transaction((txn) async {
+      final hasReturns = await _returnedUnitsBySaleIdTxn(txn, groupKey);
+      if (hasReturns.isNotEmpty) {
+        throw Exception(
+          'This sale already has returns recorded, so editing is disabled.',
+        );
+      }
+
       final existingRows = await _loadSaleRowsForGroupKeyTxn(txn, groupKey);
       if (existingRows.isEmpty) {
         throw Exception('Sale not found');
@@ -753,6 +968,13 @@ class DatabaseHelper {
     final db = await instance.database;
 
     await db.transaction((txn) async {
+      final hasReturns = await _returnedUnitsBySaleIdTxn(txn, groupKey);
+      if (hasReturns.isNotEmpty) {
+        throw Exception(
+          'This sale already has returns recorded, so deleting is disabled.',
+        );
+      }
+
       final existingRows = await _loadSaleRowsForGroupKeyTxn(txn, groupKey);
       if (existingRows.isEmpty) return;
 
@@ -774,6 +996,47 @@ class DatabaseHelper {
     });
   }
 
+  String get _grossLineProfitExpr => '''
+      CASE
+        WHEN COALESCE(sales.cost_price, products.cost_price) IS NOT NULL
+          AND COALESCE(sales.selling_price, products.selling_price) IS NOT NULL
+        THEN (
+          (COALESCE(sales.selling_price, products.selling_price) - sales.discount) -
+          COALESCE(sales.cost_price, products.cost_price)
+        ) * sales.units
+        ELSE sales.profit
+      END
+    ''';
+
+  String get _lineReturnJoin => '''
+      LEFT JOIN (
+        SELECT
+          sale_id,
+          SUM(units) AS returned_units,
+          SUM(refund_amount) AS returned_total,
+          SUM(profit_adjustment) AS returned_profit_adjustment
+        FROM sale_returns
+        GROUP BY sale_id
+      ) return_line_agg
+        ON return_line_agg.sale_id = sales.id
+    ''';
+
+  String get _orderReturnJoin =>
+      '''
+      LEFT JOIN (
+        SELECT
+          sale_group_key,
+          COUNT(DISTINCT return_group_id) AS return_count,
+          SUM(units) AS returned_units,
+          SUM(refund_amount) AS returned_total,
+          SUM(profit_adjustment) AS returned_profit_adjustment,
+          MAX(date) AS last_return_date
+        FROM sale_returns
+        GROUP BY sale_group_key
+      ) return_order_agg
+        ON return_order_agg.sale_group_key = $_groupKeyExpr
+    ''';
+
   String get _salesLineItemSelect =>
       '''
       SELECT
@@ -788,8 +1051,20 @@ class DatabaseHelper {
         COALESCE(NULLIF(TRIM(sales.product_name), ''), products.name, 'Deleted Product') AS product_name,
         COALESCE(NULLIF(TRIM(sales.product_name), ''), products.name, 'Deleted Product') AS name,
         sales.units,
+        COALESCE(return_line_agg.returned_units, 0) AS returned_units,
+        CASE
+          WHEN sales.units > COALESCE(return_line_agg.returned_units, 0)
+          THEN sales.units - COALESCE(return_line_agg.returned_units, 0)
+          ELSE 0
+        END AS net_units,
         sales.discount,
-        sales.total,
+        sales.total AS gross_total,
+        CASE
+          WHEN sales.total > COALESCE(return_line_agg.returned_total, 0)
+          THEN sales.total - COALESCE(return_line_agg.returned_total, 0)
+          ELSE 0
+        END AS total,
+        COALESCE(return_line_agg.returned_total, 0) AS returned_total,
         sales.date,
         COALESCE(sales.cost_price, products.cost_price) AS cost_price,
         COALESCE(sales.selling_price, products.selling_price) AS selling_price,
@@ -812,20 +1087,15 @@ class DatabaseHelper {
           )
         ) AS amount_paid,
         COALESCE(sales.due_amount, 0) AS due_amount,
-        CASE
-          WHEN COALESCE(sales.cost_price, products.cost_price) IS NOT NULL
-            AND COALESCE(sales.selling_price, products.selling_price) IS NOT NULL
-          THEN (
-            (COALESCE(sales.selling_price, products.selling_price) - sales.discount) -
-            COALESCE(sales.cost_price, products.cost_price)
-          ) * sales.units
-          ELSE sales.profit
-        END AS profit
+        $_grossLineProfitExpr AS gross_profit,
+        $_grossLineProfitExpr - COALESCE(return_line_agg.returned_profit_adjustment, 0) AS profit,
+        COALESCE(return_line_agg.returned_profit_adjustment, 0) AS returned_profit_adjustment
       FROM sales
       LEFT JOIN products
         ON sales.product_id = products.id
       LEFT JOIN customers
         ON sales.customer_id = customers.id
+      $_lineReturnJoin
     ''';
 
   Future<List<Map<String, dynamic>>> getSalesWithProduct() async {
@@ -887,25 +1157,31 @@ class DatabaseHelper {
           MAX(customers.phone),
           ''
         ) AS customer_phone,
+        MAX(COALESCE(return_order_agg.return_count, 0)) AS return_count,
+        MAX(COALESCE(return_order_agg.last_return_date, '')) AS last_return_date,
         COALESCE(NULLIF(TRIM(MAX(sales.payment_status)), ''), 'paid') AS payment_status,
         COALESCE(NULLIF(TRIM(MAX(sales.payment_method)), ''), 'Cash') AS payment_method,
         COALESCE(MAX(sales.amount_paid), SUM(sales.total)) AS amount_paid,
         COALESCE(MAX(sales.due_amount), 0) AS due_amount,
         MAX(sales.date) AS date,
         COUNT(*) AS item_count,
-        SUM(sales.units) AS total_units,
-        SUM(sales.total) AS total,
-        SUM(
-          CASE
-            WHEN COALESCE(sales.cost_price, products.cost_price) IS NOT NULL
-              AND COALESCE(sales.selling_price, products.selling_price) IS NOT NULL
-            THEN (
-              (COALESCE(sales.selling_price, products.selling_price) - sales.discount) -
-              COALESCE(sales.cost_price, products.cost_price)
-            ) * sales.units
-            ELSE sales.profit
-          END
-        ) AS profit,
+        SUM(sales.units) AS gross_units,
+        CASE
+          WHEN SUM(sales.units) > MAX(COALESCE(return_order_agg.returned_units, 0))
+          THEN SUM(sales.units) - MAX(COALESCE(return_order_agg.returned_units, 0))
+          ELSE 0
+        END AS total_units,
+        SUM(sales.total) AS gross_total,
+        MAX(COALESCE(return_order_agg.returned_total, 0)) AS returned_total,
+        CASE
+          WHEN SUM(sales.total) > MAX(COALESCE(return_order_agg.returned_total, 0))
+          THEN SUM(sales.total) - MAX(COALESCE(return_order_agg.returned_total, 0))
+          ELSE 0
+        END AS total,
+        SUM($_grossLineProfitExpr) AS gross_profit,
+        MAX(COALESCE(return_order_agg.returned_profit_adjustment, 0)) AS returned_profit_adjustment,
+        SUM($_grossLineProfitExpr) -
+            MAX(COALESCE(return_order_agg.returned_profit_adjustment, 0)) AS profit,
         GROUP_CONCAT(
           COALESCE(NULLIF(TRIM(sales.product_name), ''), products.name, 'Deleted Product')
         ) AS product_names
@@ -914,6 +1190,7 @@ class DatabaseHelper {
         ON sales.product_id = products.id
       LEFT JOIN customers
         ON sales.customer_id = customers.id
+      $_orderReturnJoin
     ''';
 
   Future<List<Map<String, dynamic>>> getSaleOrders() async {
@@ -1012,6 +1289,51 @@ class DatabaseHelper {
     return const [];
   }
 
+  Future<List<Map<String, dynamic>>> getSaleReturnsForGroupKey(
+    String groupKey,
+  ) async {
+    final db = await instance.database;
+    return db.rawQuery(
+      '''
+      SELECT
+        sale_returns.id,
+        sale_returns.return_group_id,
+        sale_returns.sale_group_key,
+        sale_returns.sale_id,
+        sale_returns.bill_number,
+        sale_returns.customer_id,
+        COALESCE(NULLIF(TRIM(sale_returns.customer_name), ''), 'Walk-in Customer') AS customer_name,
+        COALESCE(NULLIF(TRIM(sale_returns.customer_phone), ''), '') AS customer_phone,
+        sale_returns.product_id,
+        COALESCE(
+          NULLIF(TRIM(sale_returns.product_name), ''),
+          products.name,
+          'Deleted Product'
+        ) AS product_name,
+        sale_returns.units,
+        sale_returns.discount,
+        sale_returns.refund_amount,
+        sale_returns.profit_adjustment,
+        sale_returns.cost_price,
+        sale_returns.selling_price,
+        CASE
+          WHEN sale_returns.selling_price IS NOT NULL
+          THEN sale_returns.selling_price - sale_returns.discount
+          ELSE NULL
+        END AS sold_price,
+        sale_returns.date,
+        COALESCE(NULLIF(TRIM(sale_returns.reason), ''), 'No reason added') AS reason,
+        sale_returns.restocked
+      FROM sale_returns
+      LEFT JOIN products
+        ON sale_returns.product_id = products.id
+      WHERE sale_returns.sale_group_key = ?
+      ORDER BY sale_returns.date DESC, sale_returns.id DESC
+    ''',
+      [groupKey],
+    );
+  }
+
   Future<Map<String, dynamic>> getTodaySummary() async {
     final db = await instance.database;
     final today = DateTime.now();
@@ -1022,21 +1344,20 @@ class DatabaseHelper {
       '''
       SELECT
         COUNT(DISTINCT $_groupKeyExpr) AS total_sales,
-        SUM(sales.total) AS total_revenue,
         SUM(
           CASE
-            WHEN COALESCE(sales.cost_price, products.cost_price) IS NOT NULL
-              AND COALESCE(sales.selling_price, products.selling_price) IS NOT NULL
-            THEN (
-              (COALESCE(sales.selling_price, products.selling_price) - sales.discount) -
-              COALESCE(sales.cost_price, products.cost_price)
-            ) * sales.units
-            ELSE sales.profit
+            WHEN sales.total > COALESCE(return_line_agg.returned_total, 0)
+            THEN sales.total - COALESCE(return_line_agg.returned_total, 0)
+            ELSE 0
           END
+        ) AS total_revenue,
+        SUM(
+          $_grossLineProfitExpr - COALESCE(return_line_agg.returned_profit_adjustment, 0)
         ) AS total_profit
       FROM sales
       LEFT JOIN products
         ON sales.product_id = products.id
+      $_lineReturnJoin
       WHERE sales.date LIKE ?
     ''',
       ['$todayString%'],
@@ -1050,8 +1371,15 @@ class DatabaseHelper {
     return db.rawQuery('''
       SELECT
         SUBSTR(date, 1, 10) AS day,
-        SUM(total) AS revenue
+        SUM(
+          CASE
+            WHEN sales.total > COALESCE(return_line_agg.returned_total, 0)
+            THEN sales.total - COALESCE(return_line_agg.returned_total, 0)
+            ELSE 0
+          END
+        ) AS revenue
       FROM sales
+      $_lineReturnJoin
       GROUP BY day
       ORDER BY day
     ''');
@@ -1076,10 +1404,27 @@ class DatabaseHelper {
         customers.phone,
         customers.last_purchase_date,
         COUNT(DISTINCT $_groupKeyExpr) AS orders_count,
-        COALESCE(SUM(sales.total), 0) AS total_spent
+        COALESCE(
+          SUM(
+            CASE
+              WHEN sales.total > COALESCE(return_line_agg.returned_total, 0)
+              THEN sales.total - COALESCE(return_line_agg.returned_total, 0)
+              ELSE 0
+            END
+          ),
+          0
+        ) AS total_spent
       FROM customers
       LEFT JOIN sales
         ON sales.customer_id = customers.id
+      LEFT JOIN (
+        SELECT
+          sale_id,
+          SUM(refund_amount) AS returned_total
+        FROM sale_returns
+        GROUP BY sale_id
+      ) return_line_agg
+        ON return_line_agg.sale_id = sales.id
       $whereClause
       GROUP BY customers.id
       ORDER BY
@@ -1157,6 +1502,13 @@ class DatabaseHelper {
 
       await txn.update(
         'sales',
+        {'customer_name': updatedName, 'customer_phone': updatedPhone},
+        where: 'customer_id = ?',
+        whereArgs: [customerId],
+      );
+
+      await txn.update(
+        'sale_returns',
         {'customer_name': updatedName, 'customer_phone': updatedPhone},
         where: 'customer_id = ?',
         whereArgs: [customerId],
