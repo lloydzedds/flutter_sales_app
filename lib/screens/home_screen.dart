@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:fl_chart/fl_chart.dart';
@@ -114,6 +115,34 @@ class _HomeScreenState extends State<HomeScreen> {
       return "Rs ${amount.toStringAsFixed(0)}";
     }
     return "Rs ${amount.toStringAsFixed(2)}";
+  }
+
+  Uint8List? _productPhotoBytes(Map<String, dynamic> product) {
+    final value = product['photo_bytes'];
+    if (value is Uint8List) {
+      return value;
+    }
+    if (value is List<int>) {
+      return Uint8List.fromList(value);
+    }
+    return null;
+  }
+
+  Widget _buildProductAvatar(Map<String, dynamic> product) {
+    final bytes = _productPhotoBytes(product);
+
+    return Container(
+      height: 54,
+      width: 54,
+      decoration: BoxDecoration(
+        color: _accent.withAlpha(28),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: bytes == null
+          ? const Icon(Icons.inventory_2_outlined, color: Colors.white)
+          : Image.memory(bytes, fit: BoxFit.cover),
+    );
   }
 
   int get _productCount => products.length;
@@ -884,6 +913,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: ListTile(
         onLongPress: () => _handleProductLongPress(product),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: _buildProductAvatar(product),
         title: Text(
           product['name'].toString(),
           style: TextStyle(

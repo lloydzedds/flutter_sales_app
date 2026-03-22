@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../database/database_helper.dart';
 import '../services/sale_bill_service.dart';
 import 'add_sale_screen.dart';
+import 'edit_customer_screen.dart';
 
 class CustomerHistoryScreen extends StatefulWidget {
   const CustomerHistoryScreen({super.key, required this.customer});
@@ -16,12 +17,14 @@ class CustomerHistoryScreen extends StatefulWidget {
 
 class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
   List<Map<String, dynamic>> _orders = [];
+  late Map<String, dynamic> _customer;
   bool _isLoading = true;
   bool _isBusy = false;
 
   @override
   void initState() {
     super.initState();
+    _customer = Map<String, dynamic>.from(widget.customer);
     _loadOrders();
   }
 
@@ -72,12 +75,32 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
 
   Future<void> _loadOrders() async {
     final rows = await DatabaseHelper.instance.getCustomerSaleOrders(
-      _asInt(widget.customer['id']),
+      _asInt(_customer['id']),
     );
     if (!mounted) return;
     setState(() {
       _orders = rows;
       _isLoading = false;
+    });
+  }
+
+  Future<void> _editCustomer() async {
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => EditCustomerScreen(customer: _customer),
+      ),
+    );
+    if (!mounted || updated != true) return;
+
+    final refreshed = await DatabaseHelper.instance.getCustomerById(
+      _asInt(_customer['id']),
+    );
+    if (!mounted) return;
+
+    setState(() {
+      if (refreshed != null) {
+        _customer = refreshed;
+      }
     });
   }
 
@@ -309,7 +332,16 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
     );
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Customer History")),
+      appBar: AppBar(
+        title: const Text("Customer History"),
+        actions: [
+          IconButton(
+            onPressed: _editCustomer,
+            icon: const Icon(Icons.edit_outlined),
+            tooltip: "Edit Customer",
+          ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: _loadOrders,
         child: ListView(
@@ -323,9 +355,8 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      widget.customer['name']?.toString().trim().isNotEmpty ==
-                              true
-                          ? widget.customer['name'].toString().trim()
+                      _customer['name']?.toString().trim().isNotEmpty == true
+                          ? _customer['name'].toString().trim()
                           : 'Unnamed Customer',
                       style: const TextStyle(
                         fontSize: 18,
@@ -334,9 +365,8 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      widget.customer['phone']?.toString().trim().isNotEmpty ==
-                              true
-                          ? widget.customer['phone'].toString().trim()
+                      _customer['phone']?.toString().trim().isNotEmpty == true
+                          ? _customer['phone'].toString().trim()
                           : 'Phone not saved',
                     ),
                     const SizedBox(height: 14),
@@ -353,6 +383,15 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
                           value: _formatCurrency(totalSpent),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _editCustomer,
+                        icon: const Icon(Icons.edit_outlined),
+                        label: const Text("Edit Customer Details"),
+                      ),
                     ),
                   ],
                 ),

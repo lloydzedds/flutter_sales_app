@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:intl/intl.dart';
 import 'package:path/path.dart';
@@ -8,7 +9,7 @@ class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
   static const _databaseName = 'sales.db';
-  static const _databaseVersion = 4;
+  static const _databaseVersion = 5;
   static const _groupKeyExpr =
       "COALESCE(sales.sale_group_id, 'legacy-' || CAST(sales.id AS TEXT))";
 
@@ -39,7 +40,8 @@ class DatabaseHelper {
         name TEXT NOT NULL,
         cost_price REAL NOT NULL,
         selling_price REAL NOT NULL,
-        stock INTEGER NOT NULL
+        stock INTEGER NOT NULL,
+        photo_bytes BLOB
       )
     ''');
 
@@ -120,6 +122,12 @@ class DatabaseHelper {
         'bill_number': 'ALTER TABLE sales ADD COLUMN bill_number TEXT',
       });
     }
+
+    if (oldVersion < 5) {
+      await _ensureProductColumns(db, {
+        'photo_bytes': 'ALTER TABLE products ADD COLUMN photo_bytes BLOB',
+      });
+    }
   }
 
   Future<void> _ensureSalesColumns(
@@ -127,6 +135,23 @@ class DatabaseHelper {
     Map<String, String> columnStatements,
   ) async {
     final columns = await db.rawQuery("PRAGMA table_info(sales)");
+    final names = columns
+        .map((column) => column['name'] as String?)
+        .whereType<String>()
+        .toSet();
+
+    for (final entry in columnStatements.entries) {
+      if (!names.contains(entry.key)) {
+        await db.execute(entry.value);
+      }
+    }
+  }
+
+  Future<void> _ensureProductColumns(
+    Database db,
+    Map<String, String> columnStatements,
+  ) async {
+    final columns = await db.rawQuery("PRAGMA table_info(products)");
     final names = columns
         .map((column) => column['name'] as String?)
         .whereType<String>()
@@ -238,6 +263,7 @@ class DatabaseHelper {
     required double costPrice,
     required double sellingPrice,
     required int stock,
+    Uint8List? photoBytes,
   }) async {
     final db = await instance.database;
     await db.update(
@@ -247,6 +273,7 @@ class DatabaseHelper {
         'cost_price': costPrice,
         'selling_price': sellingPrice,
         'stock': stock,
+        'photo_bytes': photoBytes,
       },
       where: 'id = ?',
       whereArgs: [productId],
@@ -937,6 +964,82 @@ class DatabaseHelper {
         COALESCE(customers.last_purchase_date, customers.updated_at, customers.created_at) DESC,
         customers.name COLLATE NOCASE ASC
     ''', args);
+  }
+
+  Future<Map<String, dynamic>?> getCustomerById(int customerId) async {
+    final db = await instance.database;
+    final rows = await db.query(
+      'customers',
+      where: 'id = ?',
+      whereArgs: [customerId],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) {
+      return null;
+    }
+    return rows.first;
+  }
+
+  Future<void> updateCustomer({
+    required int customerId,
+    required String name,
+    required String phone,
+  }) async {
+    final db = await instance.database;
+    final cleanName = _trim(name);
+    final cleanPhone = _trim(phone);
+
+    if (cleanName.isEmpty && cleanPhone.isEmpty) {
+      throw Exception("Enter a customer name or phone number");
+    }
+
+    await db.transaction((txn) async {
+      final existingRows = await txn.query(
+        'customers',
+        where: 'id = ?',
+        whereArgs: [customerId],
+        limit: 1,
+      );
+
+      if (existingRows.isEmpty) {
+        throw Exception("Customer not found");
+      }
+
+      if (cleanPhone.isNotEmpty) {
+        final duplicatePhone = await txn.query(
+          'customers',
+          where: 'phone = ? AND id != ?',
+          whereArgs: [cleanPhone, customerId],
+          limit: 1,
+        );
+        if (duplicatePhone.isNotEmpty) {
+          throw Exception("Another customer already uses this phone number");
+        }
+      }
+
+      final existing = existingRows.first;
+      final existingName = _trim(existing['name']?.toString());
+      final updatedName = cleanName.isEmpty
+          ? (existingName.isEmpty ? 'Customer' : existingName)
+          : cleanName;
+      final updatedPhone = cleanPhone.isEmpty ? null : cleanPhone;
+      final updatedAt = _nowStamp();
+
+      await txn.update(
+        'customers',
+        {'name': updatedName, 'phone': updatedPhone, 'updated_at': updatedAt},
+        where: 'id = ?',
+        whereArgs: [customerId],
+      );
+
+      await txn.update(
+        'sales',
+        {'customer_name': updatedName, 'customer_phone': updatedPhone},
+        where: 'customer_id = ?',
+        whereArgs: [customerId],
+      );
+    });
   }
 
   Future<List<Map<String, dynamic>>> getCustomerSaleOrders(

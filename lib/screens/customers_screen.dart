@@ -3,6 +3,9 @@ import 'package:intl/intl.dart';
 
 import '../database/database_helper.dart';
 import 'customer_history_screen.dart';
+import 'edit_customer_screen.dart';
+
+enum _CustomerAction { history, edit }
 
 class CustomersScreen extends StatefulWidget {
   const CustomersScreen({super.key});
@@ -70,6 +73,28 @@ class _CustomersScreenState extends State<CustomersScreen> {
     await _loadCustomers();
   }
 
+  Future<void> _editCustomer(Map<String, dynamic> customer) async {
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => EditCustomerScreen(customer: customer)),
+    );
+    if (!mounted || updated != true) return;
+    await _loadCustomers();
+  }
+
+  Future<void> _handleCustomerAction(
+    _CustomerAction action,
+    Map<String, dynamic> customer,
+  ) async {
+    switch (action) {
+      case _CustomerAction.history:
+        await _openCustomerHistory(customer);
+        break;
+      case _CustomerAction.edit:
+        await _editCustomer(customer);
+        break;
+    }
+  }
+
   Widget _buildCustomerCard(Map<String, dynamic> customer) {
     final phone = customer['phone']?.toString().trim() ?? '';
 
@@ -108,7 +133,27 @@ class _CustomersScreenState extends State<CustomersScreen> {
             ],
           ),
         ),
-        trailing: const Icon(Icons.chevron_right_rounded),
+        trailing: PopupMenuButton<_CustomerAction>(
+          onSelected: (action) => _handleCustomerAction(action, customer),
+          itemBuilder: (context) => const [
+            PopupMenuItem(
+              value: _CustomerAction.history,
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.history_rounded),
+                title: Text("View History"),
+              ),
+            ),
+            PopupMenuItem(
+              value: _CustomerAction.edit,
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.edit_outlined),
+                title: Text("Edit Customer"),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

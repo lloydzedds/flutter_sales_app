@@ -1,4 +1,8 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../database/database_helper.dart';
 
@@ -13,6 +17,7 @@ class AddProductScreen extends StatefulWidget {
 
 class _AddProductScreenState extends State<AddProductScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _imagePicker = ImagePicker();
 
   final nameController = TextEditingController();
   final costController = TextEditingController();
@@ -22,6 +27,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
   List<Map<String, dynamic>> _products = [];
   List<Map<String, dynamic>> _matchingProducts = [];
   Map<String, dynamic>? _selectedExistingProduct;
+  Uint8List? _selectedPhotoBytes;
+  String? _selectedPhotoLabel;
   bool _isSaving = false;
 
   @override
@@ -78,6 +85,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
       return value.toInt();
     }
     return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  Uint8List? _photoBytesFrom(dynamic value) {
+    if (value is Uint8List) {
+      return value;
+    }
+    if (value is List<int>) {
+      return Uint8List.fromList(value);
+    }
+    return null;
   }
 
   String _normalizedName() {
@@ -185,6 +202,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
     void updateState() {
       _selectedExistingProduct = product;
       _matchingProducts = [];
+      _selectedPhotoBytes = _photoBytesFrom(product['photo_bytes']);
+      _selectedPhotoLabel = _selectedPhotoBytes == null ? null : "Saved photo";
     }
 
     if (notify) {
@@ -216,8 +235,111 @@ class _AddProductScreenState extends State<AddProductScreen> {
     setState(() {
       _selectedExistingProduct = null;
       _matchingProducts = [];
+      _selectedPhotoBytes = null;
+      _selectedPhotoLabel = null;
     });
     _refreshPreview();
+  }
+
+  Future<ImageSource?> _pickPhotoSource() {
+    return showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.camera_alt_outlined),
+                title: const Text("Camera"),
+                subtitle: const Text("Take a new product photo"),
+                onTap: () => Navigator.of(sheetContext).pop(ImageSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text("Gallery"),
+                subtitle: const Text("Choose an existing product photo"),
+                onTap: () =>
+                    Navigator.of(sheetContext).pop(ImageSource.gallery),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<bool> _ensureCameraPermission() async {
+    final status = await Permission.camera.request();
+    if (status.isGranted) {
+      return true;
+    }
+
+    if (!mounted) return false;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Camera permission is required to take a photo."),
+      ),
+    );
+    return false;
+  }
+
+  Future<void> _pickProductPhoto() async {
+    FocusScope.of(context).unfocus();
+
+    try {
+      final source = await _pickPhotoSource();
+      if (source == null) {
+        return;
+      }
+
+      if (source == ImageSource.camera && !await _ensureCameraPermission()) {
+        return;
+      }
+
+      final pickedFile = await _imagePicker.pickImage(
+        source: source,
+        imageQuality: 88,
+        maxWidth: 1600,
+      );
+      if (pickedFile == null) {
+        return;
+      }
+
+      final bytes = await pickedFile.readAsBytes();
+
+      if (bytes.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Could not read the selected photo.")),
+        );
+        return;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _selectedPhotoBytes = Uint8List.fromList(bytes);
+        _selectedPhotoLabel = source == ImageSource.camera
+            ? "Camera photo"
+            : (pickedFile.name.isEmpty ? "Gallery photo" : pickedFile.name);
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Could not pick a product photo.")),
+      );
+    }
+  }
+
+  void _removeProductPhoto() {
+    setState(() {
+      _selectedPhotoBytes = null;
+      _selectedPhotoLabel = null;
+    });
   }
 
   Future<void> _saveProduct() async {
@@ -236,6 +358,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
     final stock = _isUpdatingExisting && stockController.text.trim().isEmpty
         ? 0
         : _parseStock(stockController.text)!;
+    final photoBytes = _selectedPhotoBytes;
 
     setState(() {
       _isSaving = true;
@@ -266,6 +389,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
           costPrice: cost,
           sellingPrice: price,
           stock: updatedStock,
+          photoBytes: photoBytes,
         );
 
         message = stock > 0
@@ -282,9 +406,14 @@ class _AddProductScreenState extends State<AddProductScreen> {
           final newStock =
               (currentStock is num ? currentStock.toInt() : 0) + stock;
 
-          await DatabaseHelper.instance.updateStock(
-            existingSamePrice['id'] as int,
-            newStock,
+          await DatabaseHelper.instance.updateProduct(
+            productId: existingSamePrice['id'] as int,
+            name: baseName,
+            costPrice: cost,
+            sellingPrice: price,
+            stock: newStock,
+            photoBytes:
+                photoBytes ?? _photoBytesFrom(existingSamePrice['photo_bytes']),
           );
           message = "Existing product found. Stock updated to $newStock.";
         } else {
@@ -300,6 +429,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
             'cost_price': cost,
             'selling_price': price,
             'stock': stock,
+            'photo_bytes': photoBytes,
           });
 
           message = sameNameList.isNotEmpty
@@ -420,7 +550,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     children: _matchingProducts.map((product) {
                       return ListTile(
                         dense: true,
-                        leading: const Icon(Icons.history_toggle_off_rounded),
+                        leading: _buildPhotoPreview(
+                          context,
+                          bytes: _photoBytesFrom(product['photo_bytes']),
+                          size: 42,
+                          icon: Icons.history_toggle_off_rounded,
+                        ),
                         title: Text(product['name']?.toString() ?? ''),
                         subtitle: Text(
                           "Cost ${_formatCurrency(product['cost_price'])} • Selling ${_formatCurrency(product['selling_price'])} • Stock ${product['stock']}",
@@ -464,6 +599,59 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   ),
                 ),
               ],
+              const SizedBox(height: 14),
+              const Text(
+                "Product Photo",
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                "Optional. Add a photo so the product is easier to recognize in inventory.",
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildPhotoPreview(
+                    context,
+                    bytes: _selectedPhotoBytes,
+                    size: 88,
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _pickProductPhoto,
+                          icon: const Icon(Icons.photo_library_outlined),
+                          label: Text(
+                            _selectedPhotoBytes == null
+                                ? "Add Product Photo"
+                                : "Change Photo",
+                          ),
+                        ),
+                        if (_selectedPhotoLabel != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            _selectedPhotoLabel!,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                        if (_selectedPhotoBytes != null) ...[
+                          const SizedBox(height: 8),
+                          TextButton.icon(
+                            onPressed: _removeProductPhoto,
+                            icon: const Icon(Icons.delete_outline),
+                            label: const Text("Remove Photo"),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 14),
               Row(
                 children: [
@@ -568,6 +756,29 @@ class _AddProductScreenState extends State<AddProductScreen> {
     );
   }
 
+  Widget _buildPhotoPreview(
+    BuildContext context, {
+    required Uint8List? bytes,
+    double size = 88,
+    IconData icon = Icons.photo_camera_back_outlined,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      height: size,
+      width: size,
+      decoration: BoxDecoration(
+        color: colorScheme.primary.withAlpha(10),
+        borderRadius: BorderRadius.circular(size > 48 ? 20 : 14),
+        border: Border.all(color: colorScheme.outline.withAlpha(40)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: bytes == null
+          ? Icon(icon, color: colorScheme.primary)
+          : Image.memory(bytes, fit: BoxFit.cover),
+    );
+  }
+
   Widget _buildPreviewCard(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final name = _normalizedName();
@@ -580,7 +791,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                _buildPhotoPreview(
+                  context,
+                  bytes: _selectedPhotoBytes,
+                  size: 72,
+                  icon: Icons.inventory_2_outlined,
+                ),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

@@ -1417,30 +1417,34 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
 
     return Scaffold(
       appBar: AppBar(title: Text(_isEditing ? "Edit Sale" : "Record Sale")),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _buildIntroCard(context),
-          if (!hasProducts && !_isEditing) ...[
-            const SizedBox(height: 16),
-            _buildEmptyStateCard(context),
-          ] else ...[
-            if (_missingExistingProduct) ...[
+      body: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.only(bottom: 16),
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            _buildIntroCard(context),
+            if (!hasProducts && !_isEditing) ...[
               const SizedBox(height: 16),
-              _buildMissingProductCard(context),
+              _buildEmptyStateCard(context),
+            ] else ...[
+              if (_missingExistingProduct) ...[
+                const SizedBox(height: 16),
+                _buildMissingProductCard(context),
+              ],
+              const SizedBox(height: 16),
+              _buildCustomerCard(context),
+              const SizedBox(height: 16),
+              _buildCurrentItemCard(context),
+              const SizedBox(height: 16),
+              _buildDiscountCard(context),
+              const SizedBox(height: 16),
+              _buildSummaryCard(context),
+              const SizedBox(height: 16),
+              _buildActionButtons(context),
             ],
-            const SizedBox(height: 16),
-            _buildCustomerCard(context),
-            const SizedBox(height: 16),
-            _buildCurrentItemCard(context),
-            const SizedBox(height: 16),
-            _buildDiscountCard(context),
-            const SizedBox(height: 16),
-            _buildSummaryCard(context),
-            const SizedBox(height: 16),
-            _buildActionButtons(context),
           ],
-        ],
+        ),
       ),
     );
   }
