@@ -143,168 +143,178 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final storeName = _storeDetails['store_name']?.trim() ?? '';
-    final ownerName = _storeDetails['store_owner']?.trim() ?? '';
-    final defaultDiscountMode = _controller.defaultDiscountMode;
-
     return Scaffold(
       appBar: AppBar(title: const Text("Settings")),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _buildSection(
-            title: "Appearance",
-            subtitle: "Change how the application looks",
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SegmentedButton<ThemeMode>(
-                  segments: const [
-                    ButtonSegment<ThemeMode>(
-                      value: ThemeMode.system,
-                      icon: Icon(Icons.phone_android_rounded),
-                      label: Text("System"),
+      body: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          final storeName = _storeDetails['store_name']?.trim() ?? '';
+          final ownerName = _storeDetails['store_owner']?.trim() ?? '';
+          final defaultDiscountMode = _controller.defaultDiscountMode;
+
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              _buildSection(
+                title: "Appearance",
+                subtitle: "Change how the application looks",
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SegmentedButton<ThemeMode>(
+                      segments: const [
+                        ButtonSegment<ThemeMode>(
+                          value: ThemeMode.system,
+                          icon: Icon(Icons.phone_android_rounded),
+                          label: Text("System"),
+                        ),
+                        ButtonSegment<ThemeMode>(
+                          value: ThemeMode.light,
+                          icon: Icon(Icons.light_mode_outlined),
+                          label: Text("Light"),
+                        ),
+                        ButtonSegment<ThemeMode>(
+                          value: ThemeMode.dark,
+                          icon: Icon(Icons.dark_mode_outlined),
+                          label: Text("Dark"),
+                        ),
+                      ],
+                      selected: {_controller.themeMode},
+                      onSelectionChanged: (selection) {
+                        if (selection.isEmpty) return;
+                        _controller.setThemeMode(selection.first);
+                      },
+                      showSelectedIcon: false,
                     ),
-                    ButtonSegment<ThemeMode>(
-                      value: ThemeMode.light,
-                      icon: Icon(Icons.light_mode_outlined),
-                      label: Text("Light"),
-                    ),
-                    ButtonSegment<ThemeMode>(
-                      value: ThemeMode.dark,
-                      icon: Icon(Icons.dark_mode_outlined),
-                      label: Text("Dark"),
-                    ),
-                  ],
-                  selected: {_controller.themeMode},
-                  onSelectionChanged: (selection) {
-                    if (selection.isEmpty) return;
-                    _controller.setThemeMode(selection.first);
-                  },
-                  showSelectedIcon: false,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  "Current: ${_controller.themeModeLabel(_controller.themeMode)}",
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
-            ),
-          ),
-          _buildSection(
-            title: "Record Sale Defaults",
-            subtitle: "Choose which discount option opens first in Record Sale",
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment<String>(
-                      value: 'manual',
-                      icon: Icon(Icons.edit_outlined),
-                      label: Text("Manual"),
-                    ),
-                    ButtonSegment<String>(
-                      value: 'sold_price',
-                      icon: Icon(Icons.sell_outlined),
-                      label: Text("Sold Price"),
-                    ),
-                    ButtonSegment<String>(
-                      value: 'percentage',
-                      icon: Icon(Icons.percent_rounded),
-                      label: Text("Percentage"),
+                    const SizedBox(height: 12),
+                    Text(
+                      "Current: ${_controller.themeModeLabel(_controller.themeMode)}",
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ],
-                  selected: {defaultDiscountMode},
-                  onSelectionChanged: (selection) {
-                    if (selection.isEmpty) return;
-                    _controller.setDefaultDiscountMode(selection.first);
-                  },
-                  showSelectedIcon: false,
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  "Current: ${_controller.discountModeLabel(defaultDiscountMode)}",
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
-            ),
-          ),
-          _buildSection(
-            title: "Invoice and Store Details",
-            subtitle:
-                "Store information that can be used in invoices and business details",
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  storeName.isEmpty ? "Store name not set" : storeName,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(ownerName.isEmpty ? "Owner/contact not set" : ownerName),
-                const SizedBox(height: 14),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: _openStoreDetails,
-                    icon: const Icon(Icons.store_mall_directory_outlined),
-                    label: const Text("Edit Store Details"),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          _buildSection(
-            title: "Backup Data",
-            subtitle:
-                "Create a local backup file or restore from an existing backup",
-            child: Column(
-              children: [
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: _isBusy ? null : _backupData,
-                    icon: const Icon(Icons.backup_outlined),
-                    label: const Text("Take Local Backup"),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: _isBusy ? null : _restoreData,
-                    icon: const Icon(Icons.restore_rounded),
-                    label: const Text("Restore From Backup"),
-                  ),
-                ),
-                if (_isBusy) ...[
-                  const SizedBox(height: 14),
-                  const LinearProgressIndicator(),
-                ],
-              ],
-            ),
-          ),
-          _buildSection(
-            title: "How to Use This Application",
-            subtitle: "Quick help for daily use",
-            child: SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const HowToUseScreen()),
-                  );
-                },
-                icon: const Icon(Icons.help_outline_rounded),
-                label: const Text("Open Guide"),
               ),
-            ),
-          ),
-        ],
+              _buildSection(
+                title: "Record Sale Defaults",
+                subtitle:
+                    "Choose which discount option opens first in Record Sale",
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment<String>(
+                          value: 'manual',
+                          icon: Icon(Icons.edit_outlined),
+                          label: Text("Manual"),
+                        ),
+                        ButtonSegment<String>(
+                          value: 'sold_price',
+                          icon: Icon(Icons.sell_outlined),
+                          label: Text("Sold Price"),
+                        ),
+                        ButtonSegment<String>(
+                          value: 'percentage',
+                          icon: Icon(Icons.percent_rounded),
+                          label: Text("Percentage"),
+                        ),
+                      ],
+                      selected: {defaultDiscountMode},
+                      onSelectionChanged: (selection) {
+                        if (selection.isEmpty) return;
+                        _controller.setDefaultDiscountMode(selection.first);
+                      },
+                      showSelectedIcon: false,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      "Current: ${_controller.discountModeLabel(defaultDiscountMode)}",
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ],
+                ),
+              ),
+              _buildSection(
+                title: "Invoice and Store Details",
+                subtitle:
+                    "Store information that can be used in invoices and business details",
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      storeName.isEmpty ? "Store name not set" : storeName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      ownerName.isEmpty ? "Owner/contact not set" : ownerName,
+                    ),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _openStoreDetails,
+                        icon: const Icon(Icons.store_mall_directory_outlined),
+                        label: const Text("Edit Store Details"),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _buildSection(
+                title: "Backup Data",
+                subtitle:
+                    "Create a local backup file or restore from an existing backup",
+                child: Column(
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _isBusy ? null : _backupData,
+                        icon: const Icon(Icons.backup_outlined),
+                        label: const Text("Take Local Backup"),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _isBusy ? null : _restoreData,
+                        icon: const Icon(Icons.restore_rounded),
+                        label: const Text("Restore From Backup"),
+                      ),
+                    ),
+                    if (_isBusy) ...[
+                      const SizedBox(height: 14),
+                      const LinearProgressIndicator(),
+                    ],
+                  ],
+                ),
+              ),
+              _buildSection(
+                title: "How to Use This Application",
+                subtitle: "Quick help for daily use",
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const HowToUseScreen(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.help_outline_rounded),
+                    label: const Text("Open Guide"),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

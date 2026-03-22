@@ -4,11 +4,13 @@ import 'package:file_picker/file_picker.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../database/database_helper.dart';
 import '../services/sale_bill_service.dart';
+import '../services/sales_export_service.dart';
 import 'add_sale_screen.dart';
 
 enum _CsvExportScope { customDates, pastMonth, everything }
@@ -29,6 +31,8 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   int todaySales = 0;
   bool _isLoading = true;
   bool _isBusy = false;
+
+  String _fileLabel(File file) => path.basename(file.path);
 
   @override
   void initState() {
@@ -165,17 +169,6 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     }).toList();
   }
 
-  String _csvCell(dynamic value) {
-    final text = value?.toString() ?? '';
-    final escaped = text.replaceAll('"', '""');
-    if (escaped.contains(',') ||
-        escaped.contains('"') ||
-        escaped.contains('\n')) {
-      return '"$escaped"';
-    }
-    return escaped;
-  }
-
   void _showMessage(String message) {
     ScaffoldMessenger.of(
       context,
@@ -283,38 +276,49 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     );
   }
 
-  Future<void> exportToCSV() async {
+  Future<_ExportSelection?> _pickExportSelection() async {
     final scope = await _pickExportScope();
-    if (scope == null) return;
-
-    List<Map<String, dynamic>> exportRows;
-    String exportLabel;
+    if (scope == null) return null;
 
     switch (scope) {
       case _CsvExportScope.customDates:
         final range = await _pickExportDateRange();
-        if (range == null) return;
-        exportRows = await DatabaseHelper.instance.getSaleItemsForExport(
+        if (range == null) return null;
+        return _ExportSelection(
+          exportLabel:
+              "${DateFormat('yyyyMMdd').format(range.start)}_${DateFormat('yyyyMMdd').format(range.end)}",
+          title:
+              "Custom range: ${DateFormat('d MMM yyyy').format(range.start)} to ${DateFormat('d MMM yyyy').format(range.end)}",
           startDate: "${DateFormat('yyyy-MM-dd').format(range.start)} 00:00",
           endDate: "${DateFormat('yyyy-MM-dd').format(range.end)} 23:59",
         );
-        exportLabel =
-            "${DateFormat('yyyyMMdd').format(range.start)}_${DateFormat('yyyyMMdd').format(range.end)}";
-        break;
       case _CsvExportScope.pastMonth:
         final end = DateTime.now();
         final start = end.subtract(const Duration(days: 29));
-        exportRows = await DatabaseHelper.instance.getSaleItemsForExport(
+        return _ExportSelection(
+          exportLabel: "past_month",
+          title: "Past Month",
           startDate: "${DateFormat('yyyy-MM-dd').format(start)} 00:00",
           endDate: "${DateFormat('yyyy-MM-dd').format(end)} 23:59",
         );
-        exportLabel = "past_month";
-        break;
       case _CsvExportScope.everything:
-        exportRows = await DatabaseHelper.instance.getSaleItemsForExport();
-        exportLabel = "all_data";
-        break;
+        return const _ExportSelection(
+          exportLabel: "all_data",
+          title: "All Sales Data",
+        );
     }
+  }
+
+  Future<void> exportToCSV() async {
+    final selection = await _pickExportSelection();
+    if (selection == null) return;
+
+    final exportRows = selection.hasDateRange
+        ? await DatabaseHelper.instance.getSaleItemsForExport(
+            startDate: selection.startDate,
+            endDate: selection.endDate,
+          )
+        : await DatabaseHelper.instance.getSaleItemsForExport();
 
     if (exportRows.isEmpty) {
       _showMessage("No sales found for the selected export range");
@@ -326,41 +330,50 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     });
 
     try {
-      final csv = StringBuffer(
-        "Bill No,Customer,Phone,Product,Units,Selling Price,Discount,Total,Profit,Date\n",
+      final file = await SalesExportService.saveCsvExport(
+        rows: exportRows,
+        exportLabel: selection.exportLabel,
       );
-
-      for (final row in exportRows) {
-        csv.writeln(
-          [
-            _csvCell(row['bill_number']),
-            _csvCell(row['customer_name']),
-            _csvCell(row['customer_phone']),
-            _csvCell(row['product_name']),
-            _csvCell(row['units']),
-            _csvCell(_formatAmount(row['selling_price'])),
-            _csvCell(_formatAmount(row['discount'])),
-            _csvCell(_formatAmount(row['total'])),
-            _csvCell(_formatAmount(row['profit'])),
-            _csvCell(row['date']),
-          ].join(','),
-        );
+      if (!mounted) return;
+      _showMessage("CSV saved in sales/${_fileLabel(file)}");
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isBusy = false;
+        });
       }
+    }
+  }
 
-      final directory = await getApplicationDocumentsDirectory();
-      final fileName =
-          "sales_export_${exportLabel}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv";
-      final path = "${directory.path}/$fileName";
+  Future<void> exportToPDF() async {
+    final selection = await _pickExportSelection();
+    if (selection == null) return;
 
-      final file = File(path);
-      await file.writeAsString(csv.toString());
+    final exportOrders = selection.hasDateRange
+        ? await DatabaseHelper.instance.getSaleOrdersByDateRange(
+            selection.startDate!,
+            selection.endDate!,
+          )
+        : await DatabaseHelper.instance.getSaleOrders();
 
-      await SharePlus.instance.share(
-        ShareParams(files: [XFile(path)], text: "Sales Export File"),
+    if (exportOrders.isEmpty) {
+      _showMessage("No sales found for the selected export range");
+      return;
+    }
+
+    setState(() {
+      _isBusy = true;
+    });
+
+    try {
+      final file = await SalesExportService.savePdfExport(
+        orders: exportOrders,
+        exportLabel: selection.exportLabel,
+        reportTitle: selection.title,
       );
 
       if (!mounted) return;
-      _showMessage("Export ready to share");
+      _showMessage("PDF saved in sales/${_fileLabel(file)}");
     } finally {
       if (mounted) {
         setState(() {
@@ -872,7 +885,8 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   Widget _buildToolsPanel() {
     return _buildPanel(
       title: "History Tools",
-      subtitle: "Filter the view, export orders, or create and restore backups",
+      subtitle:
+          "Filter the view, export CSV or PDF into the local sales folder, or create and restore backups",
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -896,6 +910,11 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                 onPressed: exportToCSV,
                 icon: Icons.ios_share_outlined,
                 label: "Export CSV",
+              ),
+              _buildToolButton(
+                onPressed: exportToPDF,
+                icon: Icons.picture_as_pdf_outlined,
+                label: "Export PDF",
               ),
               _buildToolButton(
                 onPressed: backupDatabase,
@@ -1376,6 +1395,22 @@ class _OrderSection {
   final List<Map<String, dynamic>> orders;
   final double revenue;
   final double profit;
+}
+
+class _ExportSelection {
+  const _ExportSelection({
+    required this.exportLabel,
+    required this.title,
+    this.startDate,
+    this.endDate,
+  });
+
+  final String exportLabel;
+  final String title;
+  final String? startDate;
+  final String? endDate;
+
+  bool get hasDateRange => startDate != null && endDate != null;
 }
 
 class _OrderChip extends StatelessWidget {
