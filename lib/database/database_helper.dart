@@ -166,6 +166,27 @@ class DatabaseHelper {
     );
   }
 
+  Future<void> updateProduct({
+    required int productId,
+    required String name,
+    required double costPrice,
+    required double sellingPrice,
+    required int stock,
+  }) async {
+    final db = await instance.database;
+    await db.update(
+      'products',
+      {
+        'name': name,
+        'cost_price': costPrice,
+        'selling_price': sellingPrice,
+        'stock': stock,
+      },
+      where: 'id = ?',
+      whereArgs: [productId],
+    );
+  }
+
   Future<Map<String, dynamic>?> findProduct(String name, double price) async {
     final db = await instance.database;
 
