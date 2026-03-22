@@ -172,6 +172,13 @@ class _StockAdjustScreenState extends State<StockAdjustScreen> {
   @override
   Widget build(BuildContext context) {
     final previewStock = _updatedStockPreview();
+    final colorScheme = Theme.of(context).colorScheme;
+    final mutedTextColor = colorScheme.onSurface.withAlpha(180);
+    final previewColor = previewStock == null
+        ? colorScheme.onSurface
+        : previewStock < 0
+        ? colorScheme.error
+        : colorScheme.secondary;
 
     return Scaffold(
       appBar: AppBar(title: const Text("Stock Adjustment")),
@@ -202,34 +209,78 @@ class _StockAdjustScreenState extends State<StockAdjustScreen> {
               const SizedBox(height: 16),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.blueGrey.shade50,
-                  borderRadius: BorderRadius.circular(12),
+                  color: colorScheme.surface,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: colorScheme.outlineVariant.withAlpha(180),
+                  ),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       selectedProduct!['name'].toString(),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
+                        color: colorScheme.onSurface,
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    Text("Current Stock: ${_currentStock()}"),
+                    const SizedBox(height: 12),
                     Text(
-                      "Selling Price: Rs ${selectedProduct!['selling_price']}",
+                      "Current Stock",
+                      style: TextStyle(
+                        color: mutedTextColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                    if (previewStock != null)
+                    const SizedBox(height: 2),
+                    Text(
+                      "${_currentStock()} units",
+                      style: TextStyle(
+                        color: colorScheme.onSurface,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      "Selling Price",
+                      style: TextStyle(
+                        color: mutedTextColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      "Rs ${selectedProduct!['selling_price']}",
+                      style: TextStyle(
+                        color: colorScheme.onSurface,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (previewStock != null) ...[
+                      const SizedBox(height: 10),
                       Text(
-                        "Updated Stock: $previewStock",
+                        "Updated Stock",
                         style: TextStyle(
-                          color: previewStock < 0 ? Colors.red : Colors.green,
+                          color: mutedTextColor,
+                          fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
+                      const SizedBox(height: 2),
+                      Text(
+                        "$previewStock units",
+                        style: TextStyle(
+                          color: previewColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

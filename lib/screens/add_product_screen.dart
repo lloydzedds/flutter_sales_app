@@ -104,6 +104,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       return;
     }
 
+    final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     FocusScope.of(context).unfocus();
 
@@ -152,8 +153,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
 
       if (!mounted) return;
-      _resetForm();
       messenger.showSnackBar(SnackBar(content: Text(message)));
+      navigator.pop(true);
     } catch (_) {
       if (!mounted) return;
       messenger.showSnackBar(
