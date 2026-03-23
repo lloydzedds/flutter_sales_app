@@ -5,6 +5,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../ads/ad_banner_panel.dart';
 import '../database/database_helper.dart';
 import 'add_product_screen.dart';
 import 'add_sale_screen.dart';
@@ -1423,6 +1424,8 @@ class _HomeScreenState extends State<HomeScreen> {
       const SizedBox(height: 16),
       _buildPrimaryActionButton(),
       const SizedBox(height: 16),
+      const AdBannerPanel(),
+      const SizedBox(height: 16),
       _buildPanel(
         title: "Recent Sales",
         subtitle: "Latest activity in the business",
@@ -1473,6 +1476,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
+      const SizedBox(height: 16),
+      const AdBannerPanel(),
       const SizedBox(height: 16),
       _buildPanel(
         title: "Recent Sales",

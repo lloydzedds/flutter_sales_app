@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../ads/ad_banner_panel.dart';
 import '../database/database_helper.dart';
 import '../services/sale_bill_service.dart';
 import '../services/sales_export_service.dart';
@@ -1650,6 +1651,8 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
             _buildIntroCard(),
             const SizedBox(height: 16),
             _buildToolsPanel(),
+            const SizedBox(height: 16),
+            const AdBannerPanel(),
             const SizedBox(height: 16),
             _buildOverviewPanel(),
             const SizedBox(height: 16),

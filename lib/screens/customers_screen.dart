@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../ads/ad_banner_panel.dart';
 import '../database/database_helper.dart';
 import 'customer_history_screen.dart';
 import 'edit_customer_screen.dart';
@@ -210,6 +211,8 @@ class _CustomersScreenState extends State<CustomersScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: 16),
+            const AdBannerPanel(),
             const SizedBox(height: 16),
             if (_isLoading)
               const Center(child: CircularProgressIndicator())
