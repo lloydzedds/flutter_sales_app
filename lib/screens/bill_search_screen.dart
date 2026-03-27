@@ -3,6 +3,8 @@ import 'package:intl/intl.dart';
 
 import '../database/database_helper.dart';
 import '../services/sale_bill_service.dart';
+import 'add_sale_screen.dart';
+import 'record_return_screen.dart';
 
 enum _BillSearchScope { all, product, customer }
 
@@ -281,6 +283,51 @@ class _BillSearchScreenState extends State<BillSearchScreen> {
     }
   }
 
+  Future<void> _deleteOrder(Map<String, dynamic> order) async {
+    final groupKey = order['group_key']?.toString() ?? 'legacy-${order['id']}';
+    try {
+      await DatabaseHelper.instance.deleteSaleOrder(groupKey);
+      if (!mounted) return;
+
+      await _loadOrders();
+      if (!mounted) return;
+
+      _showMessage("Sale deleted");
+    } catch (error) {
+      if (!mounted) return;
+      _showMessage(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Future<void> _editSale(Map<String, dynamic> order) async {
+    if (_hasReturns(order)) {
+      _showMessage(
+        "This sale already has returns recorded, so editing is disabled.",
+      );
+      return;
+    }
+
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => AddSaleScreen(existingSale: order)),
+    );
+    if (!mounted || updated != true) return;
+
+    await _loadOrders();
+    if (!mounted) return;
+    _showMessage("Sale updated");
+  }
+
+  Future<void> _recordReturn(Map<String, dynamic> order) async {
+    final recorded = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => RecordReturnScreen(order: order)),
+    );
+    if (!mounted || recorded != true) return;
+
+    await _loadOrders();
+    if (!mounted) return;
+    _showMessage("Return recorded");
+  }
+
   Future<void> _showOrderDetails(Map<String, dynamic> order) async {
     final items = await _loadOrderItems(order);
     final returns = await _loadReturnRows(order);
@@ -509,6 +556,100 @@ class _BillSearchScreenState extends State<BillSearchScreen> {
     );
   }
 
+  Future<bool> _confirmDeleteSale(Map<String, dynamic> order) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text("Delete Sale"),
+          content: Text(
+            "Delete ${order['bill_number']?.toString().trim().isNotEmpty == true ? order['bill_number'].toString().trim() : 'this sale'}?",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text("Cancel"),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text("Delete"),
+            ),
+          ],
+        );
+      },
+    );
+
+    return confirmed ?? false;
+  }
+
+  Future<void> _handleSaleLongPress(Map<String, dynamic> order) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.info_outline),
+                title: const Text("Show details"),
+                onTap: () => Navigator.of(sheetContext).pop('details'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.picture_as_pdf_outlined),
+                title: const Text("Share bill"),
+                onTap: () => Navigator.of(sheetContext).pop('bill'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.assignment_return_outlined),
+                title: const Text("Record return"),
+                onTap: () => Navigator.of(sheetContext).pop('return'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text("Edit sale"),
+                onTap: () => Navigator.of(sheetContext).pop('edit'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.red),
+                title: const Text("Delete sale"),
+                textColor: Colors.red,
+                iconColor: Colors.red,
+                onTap: () => Navigator.of(sheetContext).pop('delete'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (!mounted || action == null) return;
+
+    switch (action) {
+      case 'details':
+        await _showOrderDetails(order);
+        return;
+      case 'bill':
+        await _shareBill(order);
+        return;
+      case 'return':
+        await _recordReturn(order);
+        return;
+      case 'edit':
+        await _editSale(order);
+        return;
+      case 'delete':
+        final confirmed = await _confirmDeleteSale(order);
+        if (!confirmed) return;
+        await _deleteOrder(order);
+        return;
+    }
+  }
+
   Widget _buildDetailRow(String label, String value, {Color? valueColor}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -643,7 +784,7 @@ class _BillSearchScreenState extends State<BillSearchScreen> {
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
         onTap: () => _showOrderDetails(order),
-        onLongPress: () => _shareBill(order),
+        onLongPress: () => _handleSaleLongPress(order),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -741,7 +882,7 @@ class _BillSearchScreenState extends State<BillSearchScreen> {
               ),
               const SizedBox(height: 10),
               Text(
-                "Tap for bill details. Long press to share the bill PDF.",
+                "Tap for bill details. Long press for bill, return, edit, or delete.",
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
