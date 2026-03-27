@@ -9,6 +9,7 @@ import '../database/database_helper.dart';
 import 'add_product_screen.dart';
 import 'add_sale_screen.dart';
 import 'customers_screen.dart';
+import 'how_to_use_screen.dart';
 import 'settings_screen.dart';
 import 'sales_history_screen.dart';
 import 'stock_adjust_screen.dart';
@@ -507,52 +508,61 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildPromoCard() {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF9B6DFF), Color(0xFF7E59D8)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+    return InkWell(
+      onTap: () => _pushAndRefresh(const HowToUseScreen()),
+      borderRadius: BorderRadius.circular(24),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF9B6DFF), Color(0xFF7E59D8)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x33261A46),
+              blurRadius: 24,
+              offset: Offset(0, 14),
+            ),
+          ],
         ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x33261A46),
-            blurRadius: 24,
-            offset: Offset(0, 14),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white.withAlpha(41),
-              borderRadius: BorderRadius.circular(16),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withAlpha(41),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(Icons.auto_graph_rounded, size: 28),
             ),
-            child: const Icon(Icons.auto_graph_rounded, size: 28),
-          ),
-          const SizedBox(width: 14),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "Sale Buddy / My Accounts",
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  "Track revenue, products, stock and recent sales from one place.",
-                  style: TextStyle(fontSize: 12.5, height: 1.35),
-                ),
-              ],
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Sale Buddy / My Accounts",
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    "Track revenue, products, stock and recent sales from one place.",
+                    style: TextStyle(fontSize: 12.5, height: 1.35),
+                  ),
+                  SizedBox(height: 6),
+                  Text(
+                    "Tap to open the quick guide",
+                    style: TextStyle(fontSize: 11.5),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const Icon(Icons.arrow_forward_ios_rounded, size: 16),
-        ],
+            const Icon(Icons.arrow_forward_ios_rounded, size: 16),
+          ],
+        ),
       ),
     );
   }
