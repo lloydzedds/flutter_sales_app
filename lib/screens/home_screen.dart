@@ -10,9 +10,28 @@ import '../database/database_helper.dart';
 import 'add_product_screen.dart';
 import 'add_sale_screen.dart';
 import 'customers_screen.dart';
+import 'how_to_use_screen.dart';
 import 'settings_screen.dart';
 import 'sales_history_screen.dart';
 import 'stock_adjust_screen.dart';
+
+enum _DashboardRangePreset {
+  today,
+  yesterday,
+  last7Days,
+  last30Days,
+  previousMonth,
+  custom,
+}
+
+enum _InventorySortOption {
+  nameAsc,
+  nameDesc,
+  priceAsc,
+  priceDesc,
+  stockAsc,
+  stockDesc,
+}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -32,10 +51,15 @@ class _HomeScreenState extends State<HomeScreen> {
   int _selectedTab = 0;
   bool _isLoading = true;
   bool _isHeaderScrolled = false;
+  final TextEditingController _inventorySearchController =
+      TextEditingController();
   DateTimeRange _selectedRange = DateTimeRange(
     start: DateTime.now().subtract(const Duration(days: 6)),
     end: DateTime.now(),
   );
+  _DashboardRangePreset _selectedRangePreset = _DashboardRangePreset.last7Days;
+  String _inventorySearchQuery = '';
+  _InventorySortOption _inventorySortOption = _InventorySortOption.nameAsc;
 
   List<Map<String, dynamic>> products = [];
   List<Map<String, dynamic>> recentSales = [];
@@ -51,6 +75,12 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     loadDashboard();
+  }
+
+  @override
+  void dispose() {
+    _inventorySearchController.dispose();
+    super.dispose();
   }
 
   Future<void> loadDashboard() async {
@@ -161,6 +191,66 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> get _lowStockProducts =>
       products.where((product) => _asInt(product['stock']) <= 5).toList();
 
+  List<Map<String, dynamic>> get _visibleProducts {
+    final query = _inventorySearchQuery.trim().toLowerCase();
+    final filtered = products.where((product) {
+      if (query.isEmpty) {
+        return true;
+      }
+
+      final name = product['name']?.toString().toLowerCase() ?? '';
+      return name.contains(query);
+    }).toList();
+
+    filtered.sort((a, b) {
+      switch (_inventorySortOption) {
+        case _InventorySortOption.nameAsc:
+          return _compareProductNames(a, b);
+        case _InventorySortOption.nameDesc:
+          return _compareProductNames(b, a);
+        case _InventorySortOption.priceAsc:
+          final priceComparison = _asDouble(
+            a['selling_price'],
+          ).compareTo(_asDouble(b['selling_price']));
+          return priceComparison != 0
+              ? priceComparison
+              : _compareProductNames(a, b);
+        case _InventorySortOption.priceDesc:
+          final priceComparison = _asDouble(
+            b['selling_price'],
+          ).compareTo(_asDouble(a['selling_price']));
+          return priceComparison != 0
+              ? priceComparison
+              : _compareProductNames(a, b);
+        case _InventorySortOption.stockAsc:
+          final stockComparison = _asInt(
+            a['stock'],
+          ).compareTo(_asInt(b['stock']));
+          return stockComparison != 0
+              ? stockComparison
+              : _compareProductNames(a, b);
+        case _InventorySortOption.stockDesc:
+          final stockComparison = _asInt(
+            b['stock'],
+          ).compareTo(_asInt(a['stock']));
+          return stockComparison != 0
+              ? stockComparison
+              : _compareProductNames(a, b);
+      }
+    });
+
+    return filtered;
+  }
+
+  int _compareProductNames(
+    Map<String, dynamic> left,
+    Map<String, dynamic> right,
+  ) {
+    final leftName = left['name']?.toString().toLowerCase() ?? '';
+    final rightName = right['name']?.toString().toLowerCase() ?? '';
+    return leftName.compareTo(rightName);
+  }
+
   List<Map<String, dynamic>> _buildTopProducts(
     List<Map<String, dynamic>> sales,
   ) {
@@ -215,9 +305,29 @@ class _HomeScreenState extends State<HomeScreen> {
     return days;
   }
 
+  DateTime _dateOnly(DateTime value) {
+    return DateTime(value.year, value.month, value.day);
+  }
+
+  String _rangePresetLabel(_DashboardRangePreset preset) {
+    switch (preset) {
+      case _DashboardRangePreset.today:
+        return "Today";
+      case _DashboardRangePreset.yesterday:
+        return "Yesterday";
+      case _DashboardRangePreset.last7Days:
+        return "Last 7 Days";
+      case _DashboardRangePreset.last30Days:
+        return "Last 30 Days";
+      case _DashboardRangePreset.previousMonth:
+        return "Previous Month";
+      case _DashboardRangePreset.custom:
+        return "Custom Range";
+    }
+  }
+
   String _rangeTitle() {
-    final days = _selectedRange.end.difference(_selectedRange.start).inDays + 1;
-    return days == 7 ? "Last 7 Days" : "Selected Range";
+    return _rangePresetLabel(_selectedRangePreset);
   }
 
   String _rangeSubtitle() {
@@ -225,7 +335,47 @@ class _HomeScreenState extends State<HomeScreen> {
     return "${formatter.format(_selectedRange.start)} - ${formatter.format(_selectedRange.end)}";
   }
 
-  Future<void> _pickDateRange() async {
+  String _inventorySortLabel(_InventorySortOption option) {
+    switch (option) {
+      case _InventorySortOption.nameAsc:
+        return "Name (A to Z)";
+      case _InventorySortOption.nameDesc:
+        return "Name (Z to A)";
+      case _InventorySortOption.priceAsc:
+        return "Price (Low to High)";
+      case _InventorySortOption.priceDesc:
+        return "Price (High to Low)";
+      case _InventorySortOption.stockAsc:
+        return "Stock (Low to High)";
+      case _InventorySortOption.stockDesc:
+        return "Stock (High to Low)";
+    }
+  }
+
+  void _selectTab(int index) {
+    setState(() {
+      _selectedTab = index;
+      _isHeaderScrolled = false;
+    });
+  }
+
+  Future<void> _applyDateRange(
+    DateTimeRange range, {
+    required _DashboardRangePreset preset,
+  }) async {
+    setState(() {
+      _selectedRange = DateTimeRange(
+        start: _dateOnly(range.start),
+        end: _dateOnly(range.end),
+      );
+      _selectedRangePreset = preset;
+      _isLoading = true;
+    });
+
+    await loadDashboard();
+  }
+
+  Future<DateTimeRange?> _pickCustomDateRange() async {
     final picked = await showDateRangePicker(
       context: context,
       initialDateRange: _selectedRange,
@@ -243,21 +393,127 @@ class _HomeScreenState extends State<HomeScreen> {
       },
     );
 
-    if (picked == null) return;
+    if (picked == null) return null;
+    return DateTimeRange(
+      start: _dateOnly(picked.start),
+      end: _dateOnly(picked.end),
+    );
+  }
 
-    setState(() {
-      _selectedRange = DateTimeRange(
-        start: DateTime(
-          picked.start.year,
-          picked.start.month,
-          picked.start.day,
-        ),
-        end: DateTime(picked.end.year, picked.end.month, picked.end.day),
-      );
-      _isLoading = true;
-    });
+  Future<void> _pickDateRange() async {
+    final now = _dateOnly(DateTime.now());
+    final previousMonthStart = DateTime(now.year, now.month - 1, 1);
+    final previousMonthEnd = DateTime(now.year, now.month, 0);
 
-    await loadDashboard();
+    final selection = await showModalBottomSheet<_DashboardRangePreset>(
+      context: context,
+      backgroundColor: _surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.today_outlined),
+                title: const Text("Today"),
+                subtitle: const Text("Show only today's sales"),
+                onTap: () =>
+                    Navigator.of(sheetContext).pop(_DashboardRangePreset.today),
+              ),
+              ListTile(
+                leading: const Icon(Icons.history_toggle_off_rounded),
+                title: const Text("Yesterday"),
+                subtitle: const Text("Show the previous day's sales"),
+                onTap: () => Navigator.of(
+                  sheetContext,
+                ).pop(_DashboardRangePreset.yesterday),
+              ),
+              ListTile(
+                leading: const Icon(Icons.date_range_outlined),
+                title: const Text("Last 7 Days"),
+                subtitle: const Text("Include today and the past 6 days"),
+                onTap: () => Navigator.of(
+                  sheetContext,
+                ).pop(_DashboardRangePreset.last7Days),
+              ),
+              ListTile(
+                leading: const Icon(Icons.calendar_view_month_outlined),
+                title: const Text("Last 30 Days"),
+                subtitle: const Text("Include today and the past 29 days"),
+                onTap: () => Navigator.of(
+                  sheetContext,
+                ).pop(_DashboardRangePreset.last30Days),
+              ),
+              ListTile(
+                leading: const Icon(Icons.event_repeat_outlined),
+                title: const Text("Previous Month"),
+                subtitle: Text(
+                  DateFormat('MMMM yyyy').format(previousMonthStart),
+                ),
+                onTap: () => Navigator.of(
+                  sheetContext,
+                ).pop(_DashboardRangePreset.previousMonth),
+              ),
+              ListTile(
+                leading: const Icon(Icons.edit_calendar_outlined),
+                title: const Text("Custom Range"),
+                subtitle: const Text("Choose any start and end dates"),
+                onTap: () => Navigator.of(
+                  sheetContext,
+                ).pop(_DashboardRangePreset.custom),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (selection == null) return;
+
+    switch (selection) {
+      case _DashboardRangePreset.today:
+        await _applyDateRange(
+          DateTimeRange(start: now, end: now),
+          preset: selection,
+        );
+        return;
+      case _DashboardRangePreset.yesterday:
+        final yesterday = now.subtract(const Duration(days: 1));
+        await _applyDateRange(
+          DateTimeRange(start: yesterday, end: yesterday),
+          preset: selection,
+        );
+        return;
+      case _DashboardRangePreset.last7Days:
+        await _applyDateRange(
+          DateTimeRange(start: now.subtract(const Duration(days: 6)), end: now),
+          preset: selection,
+        );
+        return;
+      case _DashboardRangePreset.last30Days:
+        await _applyDateRange(
+          DateTimeRange(
+            start: now.subtract(const Duration(days: 29)),
+            end: now,
+          ),
+          preset: selection,
+        );
+        return;
+      case _DashboardRangePreset.previousMonth:
+        await _applyDateRange(
+          DateTimeRange(start: previousMonthStart, end: previousMonthEnd),
+          preset: selection,
+        );
+        return;
+      case _DashboardRangePreset.custom:
+        final picked = await _pickCustomDateRange();
+        if (picked == null) return;
+        await _applyDateRange(picked, preset: selection);
+        return;
+    }
   }
 
   Future<void> _pushAndRefresh(Widget screen) async {
@@ -508,52 +764,61 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildPromoCard() {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF9B6DFF), Color(0xFF7E59D8)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+    return InkWell(
+      onTap: () => _pushAndRefresh(const HowToUseScreen()),
+      borderRadius: BorderRadius.circular(24),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF9B6DFF), Color(0xFF7E59D8)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x33261A46),
+              blurRadius: 24,
+              offset: Offset(0, 14),
+            ),
+          ],
         ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x33261A46),
-            blurRadius: 24,
-            offset: Offset(0, 14),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white.withAlpha(41),
-              borderRadius: BorderRadius.circular(16),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withAlpha(41),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(Icons.auto_graph_rounded, size: 28),
             ),
-            child: const Icon(Icons.auto_graph_rounded, size: 28),
-          ),
-          const SizedBox(width: 14),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "Sale Buddy / My Accounts",
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  "Track revenue, products, stock and recent sales from one place.",
-                  style: TextStyle(fontSize: 12.5, height: 1.35),
-                ),
-              ],
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Sale Buddy / My Accounts",
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    "Track revenue, products, stock and recent sales from one place.",
+                    style: TextStyle(fontSize: 12.5, height: 1.35),
+                  ),
+                  SizedBox(height: 6),
+                  Text(
+                    "Tap to open the quick guide",
+                    style: TextStyle(fontSize: 11.5),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const Icon(Icons.arrow_forward_ios_rounded, size: 16),
-        ],
+            const Icon(Icons.arrow_forward_ios_rounded, size: 16),
+          ],
+        ),
       ),
     );
   }
@@ -613,8 +878,10 @@ class _HomeScreenState extends State<HomeScreen> {
     required IconData icon,
     required Color accentColor,
     String? caption,
+    String? actionLabel,
+    VoidCallback? onTap,
   }) {
-    return Container(
+    final card = Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: _surface,
@@ -662,7 +929,37 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ],
+          if (actionLabel != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Text(
+                  actionLabel,
+                  style: TextStyle(
+                    color: accentColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const Spacer(),
+                Icon(Icons.chevron_right_rounded, size: 18, color: accentColor),
+              ],
+            ),
+          ],
         ],
+      ),
+    );
+
+    if (onTap == null) {
+      return card;
+    }
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(24),
+        child: card,
       ),
     );
   }
@@ -758,13 +1055,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildProductsMetricCard() {
+  Widget _buildProductsMetricCard({String? actionLabel, VoidCallback? onTap}) {
     final healthyCount = products.where((product) {
       final stock = _asInt(product['stock']);
       return stock > 5;
     }).length;
 
-    return Container(
+    final card = Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: _surface,
@@ -825,7 +1122,41 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
+          if (actionLabel != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Text(
+                  actionLabel,
+                  style: const TextStyle(
+                    color: Color(0xFFFFB43A),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const Spacer(),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: Color(0xFFFFB43A),
+                ),
+              ],
+            ),
+          ],
         ],
+      ),
+    );
+
+    if (onTap == null) {
+      return card;
+    }
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(24),
+        child: card,
       ),
     );
   }
@@ -1061,6 +1392,118 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
       }).toList(),
+    );
+  }
+
+  Widget _buildInventoryControls(int visibleCount) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: _inventorySearchController,
+          onChanged: (value) {
+            setState(() {
+              _inventorySearchQuery = value;
+            });
+          },
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: "Search products by name",
+            hintStyle: TextStyle(color: Colors.white.withAlpha(132)),
+            prefixIcon: Icon(
+              Icons.search_rounded,
+              color: Colors.white.withAlpha(168),
+            ),
+            suffixIcon: _inventorySearchQuery.trim().isEmpty
+                ? null
+                : IconButton(
+                    onPressed: () {
+                      _inventorySearchController.clear();
+                      setState(() {
+                        _inventorySearchQuery = '';
+                      });
+                    },
+                    icon: Icon(
+                      Icons.close_rounded,
+                      color: Colors.white.withAlpha(168),
+                    ),
+                  ),
+            filled: true,
+            fillColor: _surfaceSoft,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 18,
+              vertical: 16,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(18),
+              borderSide: BorderSide(color: _border),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(18),
+              borderSide: BorderSide(color: _border),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(18),
+              borderSide: const BorderSide(color: _accent, width: 1.2),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          "Showing $visibleCount of $_productCount products",
+          style: TextStyle(
+            color: Colors.white.withAlpha(150),
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<_InventorySortOption>(
+          initialValue: _inventorySortOption,
+          dropdownColor: _surface,
+          style: const TextStyle(color: Colors.white, fontSize: 14),
+          decoration: InputDecoration(
+            labelText: "Sort products",
+            labelStyle: TextStyle(color: Colors.white.withAlpha(150)),
+            filled: true,
+            fillColor: _surfaceSoft,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 16,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(18),
+              borderSide: BorderSide(color: _border),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(18),
+              borderSide: BorderSide(color: _border),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(18),
+              borderSide: const BorderSide(color: _accent, width: 1.2),
+            ),
+          ),
+          iconEnabledColor: Colors.white,
+          items: _InventorySortOption.values.map((option) {
+            return DropdownMenuItem<_InventorySortOption>(
+              value: option,
+              child: Text(
+                _inventorySortLabel(option),
+                style: const TextStyle(color: Colors.white),
+              ),
+            );
+          }).toList(),
+          onChanged: (value) {
+            if (value == null) {
+              return;
+            }
+            setState(() {
+              _inventorySortOption = value;
+            });
+          },
+        ),
+      ],
     );
   }
 
@@ -1416,9 +1859,14 @@ class _HomeScreenState extends State<HomeScreen> {
             value: "$totalSales",
             icon: Icons.receipt_long_rounded,
             accentColor: const Color(0xFF5F95FF),
+            actionLabel: "Open reports",
+            onTap: () => _selectTab(4),
           ),
           _buildProfitMetricCard(),
-          _buildProductsMetricCard(),
+          _buildProductsMetricCard(
+            actionLabel: "Open inventory",
+            onTap: () => _selectTab(2),
+          ),
         ],
       ),
       const SizedBox(height: 16),
@@ -1488,6 +1936,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildInventoryTab() {
+    final visibleProducts = _visibleProducts;
+
     return _buildScrollableTab([
       _buildPanel(
         title: "Inventory Snapshot",
@@ -1539,13 +1989,27 @@ class _HomeScreenState extends State<HomeScreen> {
       const SizedBox(height: 16),
       _buildPanel(
         title: "Products",
-        subtitle: "Long press any product to edit details or adjust stock",
-        child: products.isEmpty
-            ? Text(
+        subtitle:
+            "Search, sort, and long press any product to edit or adjust stock",
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildInventoryControls(visibleProducts.length),
+            const SizedBox(height: 16),
+            if (products.isEmpty)
+              Text(
                 "No products added yet",
                 style: TextStyle(color: Colors.white.withAlpha(179)),
               )
-            : Column(children: products.map(_buildProductItem).toList()),
+            else if (visibleProducts.isEmpty)
+              Text(
+                "No products match your search",
+                style: TextStyle(color: Colors.white.withAlpha(179)),
+              )
+            else
+              Column(children: visibleProducts.map(_buildProductItem).toList()),
+          ],
+        ),
       ),
     ]);
   }
@@ -1632,12 +2096,7 @@ class _HomeScreenState extends State<HomeScreen> {
         indicatorColor: _accent,
         selectedIndex: _selectedTab,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        onDestinationSelected: (index) {
-          setState(() {
-            _selectedTab = index;
-            _isHeaderScrolled = false;
-          });
-        },
+        onDestinationSelected: _selectTab,
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.home_outlined),
