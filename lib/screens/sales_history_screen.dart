@@ -10,11 +10,14 @@ import '../database/database_helper.dart';
 import '../services/sale_bill_service.dart';
 import '../services/sales_export_service.dart';
 import 'add_sale_screen.dart';
+import 'bill_search_screen.dart';
 import 'record_return_screen.dart';
 
 enum _CsvExportScope { customDates, pastMonth, everything }
 
 enum _ExportAction { share, saveToLocal }
+
+enum _HistorySearchScope { all, product, customer }
 
 class SalesHistoryScreen extends StatefulWidget {
   const SalesHistoryScreen({super.key});
@@ -24,21 +27,36 @@ class SalesHistoryScreen extends StatefulWidget {
 }
 
 class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
-  List<Map<String, dynamic>> orders = [];
-  List<Map<String, dynamic>> revenueData = [];
+  final TextEditingController _searchController = TextEditingController();
+  List<Map<String, dynamic>> _allOrders = [];
   DateTime? selectedDate;
   double todayRevenue = 0;
   double todayProfit = 0;
   int todaySales = 0;
   bool _isLoading = true;
   bool _isBusy = false;
+  bool _walkInOnly = false;
+  _HistorySearchScope _searchScope = _HistorySearchScope.all;
 
   String _folderLabel(File file) => file.parent.path;
 
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(_handleSearchChanged);
     loadOrders();
+  }
+
+  @override
+  void dispose() {
+    _searchController.removeListener(_handleSearchChanged);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _handleSearchChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   Map<String, String> _dateRange(DateTime date) {
@@ -138,15 +156,144 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   }
 
   String _overviewSubtitle() {
+    final finderLabel = _finderStatusLabel();
     if (selectedDate == null) {
-      return "Showing the complete order history";
+      return finderLabel == null
+          ? "Showing the complete order history"
+          : "Showing the complete order history • $finderLabel";
     }
-    return "Showing only orders from ${_formatSectionDate(selectedDate!)}";
+    return finderLabel == null
+        ? "Showing only orders from ${_formatSectionDate(selectedDate!)}"
+        : "Showing only orders from ${_formatSectionDate(selectedDate!)} • $finderLabel";
   }
+
+  bool get _hasSearchQuery => _searchController.text.trim().isNotEmpty;
+
+  bool get _hasFinderFilters =>
+      _hasSearchQuery ||
+      _walkInOnly ||
+      _searchScope != _HistorySearchScope.all;
+
+  List<Map<String, dynamic>> get orders => _filteredOrders();
 
   bool _hasReturns(Map<String, dynamic> order) =>
       _asDouble(order['returned_total']) > 0 ||
       _asInt(order['return_count']) > 0;
+
+  String _normalized(String value) => value.trim().toLowerCase();
+
+  String _customerLabel(Map<String, dynamic> order) {
+    final name = order['customer_name']?.toString().trim() ?? '';
+    return name.isEmpty ? 'Walk-in Customer' : name;
+  }
+
+  bool _isWalkInOrder(Map<String, dynamic> order) {
+    final customerId = _asInt(order['customer_id']);
+    final customerName = order['customer_name']?.toString().trim() ?? '';
+    final phone = order['customer_phone']?.toString().trim() ?? '';
+    return customerId <= 0 &&
+        phone.isEmpty &&
+        (customerName.isEmpty ||
+            _normalized(customerName) == 'walk-in customer');
+  }
+
+  List<Map<String, dynamic>> _filteredOrders() {
+    final query = _normalized(_searchController.text);
+    return _allOrders.where((order) {
+      if (_walkInOnly && !_isWalkInOrder(order)) {
+        return false;
+      }
+
+      if (query.isEmpty) {
+        return true;
+      }
+
+      final billNumber = order['bill_number']?.toString() ?? '';
+      final productNames = order['product_names']?.toString() ?? '';
+      final customerName = _customerLabel(order);
+      final customerPhone = order['customer_phone']?.toString() ?? '';
+
+      switch (_searchScope) {
+        case _HistorySearchScope.product:
+          return _normalized(productNames).contains(query);
+        case _HistorySearchScope.customer:
+          return _normalized(customerName).contains(query) ||
+              _normalized(customerPhone).contains(query);
+        case _HistorySearchScope.all:
+          return [
+            billNumber,
+            productNames,
+            customerName,
+            customerPhone,
+          ].any((value) => _normalized(value).contains(query));
+      }
+    }).toList();
+  }
+
+  String? _finderStatusLabel() {
+    if (!_hasFinderFilters) return null;
+
+    final parts = <String>[];
+    if (_hasSearchQuery) {
+      parts.add("${orders.length} matches");
+    }
+    if (_walkInOnly) {
+      parts.add("walk-in only");
+    }
+    if (_searchScope != _HistorySearchScope.all) {
+      parts.add("${_searchScopeLabel(_searchScope)} search");
+    }
+
+    return parts.isEmpty ? null : parts.join(" • ");
+  }
+
+  String _finderSubtitle() {
+    if (_allOrders.isEmpty) {
+      return "Search past bills by sold product, customer name, or walk-in sales.";
+    }
+
+    final baseLabel = selectedDate == null
+        ? "${_allOrders.length} bills across all dates"
+        : "${_allOrders.length} bills on ${_formatShortDate(selectedDate!)}";
+
+    if (!_hasFinderFilters) {
+      return "Search past bills by sold product, customer name, or walk-in sales. $baseLabel.";
+    }
+
+    return "Showing ${orders.length} matching bills from $baseLabel.";
+  }
+
+  String _searchHint() {
+    switch (_searchScope) {
+      case _HistorySearchScope.product:
+        return "Search by sold product name";
+      case _HistorySearchScope.customer:
+        return "Search by customer name or phone";
+      case _HistorySearchScope.all:
+        return "Search bill no, product, customer, or phone";
+    }
+  }
+
+  String _searchScopeLabel(_HistorySearchScope scope) {
+    switch (scope) {
+      case _HistorySearchScope.product:
+        return "Product";
+      case _HistorySearchScope.customer:
+        return "Customer";
+      case _HistorySearchScope.all:
+        return "All";
+    }
+  }
+
+  void _clearFinderFilters() {
+    _searchController.clear();
+    if (!mounted) return;
+
+    setState(() {
+      _walkInOnly = false;
+      _searchScope = _HistorySearchScope.all;
+    });
+  }
 
   Map<String, dynamic> _visibleSummary() {
     double revenue = 0;
@@ -160,11 +307,120 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   }
 
   List<Map<String, dynamic>> _chartSeries() {
-    const maxPoints = 10;
-    if (revenueData.length <= maxPoints) {
-      return revenueData;
+    final revenueByDay = <String, double>{};
+
+    for (final order in orders) {
+      final date = _parseOrderDate(order['date']?.toString());
+      if (date == null) continue;
+
+      final dayKey = DateFormat('yyyy-MM-dd').format(date);
+      revenueByDay[dayKey] =
+          (revenueByDay[dayKey] ?? 0) + _asDouble(order['total']);
     }
-    return revenueData.sublist(revenueData.length - maxPoints);
+
+    final series = revenueByDay.entries
+        .map<Map<String, dynamic>>((entry) => <String, dynamic>{
+              'day': entry.key,
+              'revenue': entry.value,
+            })
+        .toList()
+      ..sort(
+        (a, b) => (a['day'] as String).compareTo(b['day'] as String),
+      );
+
+    const maxPoints = 14;
+    if (series.length <= maxPoints) {
+      return series;
+    }
+    return series.sublist(series.length - maxPoints);
+  }
+
+  double _averageChartRevenue(List<Map<String, dynamic>> chartPoints) {
+    if (chartPoints.isEmpty) return 0;
+
+    final total = chartPoints.fold<double>(
+      0,
+      (sum, point) => sum + _asDouble(point['revenue']),
+    );
+    return total / chartPoints.length;
+  }
+
+  Map<String, dynamic>? _bestRevenueDay(List<Map<String, dynamic>> chartPoints) {
+    if (chartPoints.isEmpty) return null;
+
+    var best = chartPoints.first;
+    for (final current in chartPoints.skip(1)) {
+      if (_asDouble(current['revenue']) > _asDouble(best['revenue'])) {
+        best = current;
+      }
+    }
+    return best;
+  }
+
+  String _formatCompactAmount(double value) {
+    if (value >= 1000) {
+      return NumberFormat.compact(locale: 'en_IN').format(value);
+    }
+
+    return value == value.roundToDouble()
+        ? value.toStringAsFixed(0)
+        : value.toStringAsFixed(1);
+  }
+
+  String _chartTrendLabel(List<Map<String, dynamic>> chartPoints) {
+    if (chartPoints.length < 2) {
+      return "Single day in view";
+    }
+
+    final first = _asDouble(chartPoints.first['revenue']);
+    final last = _asDouble(chartPoints.last['revenue']);
+    final difference = last - first;
+
+    if (difference.abs() < 0.01) {
+      return "Flat vs first day";
+    }
+
+    final direction = difference > 0 ? "Up" : "Down";
+    return "$direction ${_formatCurrency(difference.abs())}";
+  }
+
+  Color _chartTrendColor(
+    BuildContext context,
+    List<Map<String, dynamic>> chartPoints,
+  ) {
+    if (chartPoints.length < 2) {
+      return Theme.of(context).colorScheme.primary;
+    }
+
+    final first = _asDouble(chartPoints.first['revenue']);
+    final last = _asDouble(chartPoints.last['revenue']);
+    if ((last - first).abs() < 0.01) {
+      return Theme.of(context).colorScheme.primary;
+    }
+
+    return last >= first
+        ? Theme.of(context).colorScheme.secondary
+        : Theme.of(context).colorScheme.error;
+  }
+
+  String _chartSubtitle(List<Map<String, dynamic>> chartPoints) {
+    if (chartPoints.isEmpty) {
+      return _hasFinderFilters
+          ? "No matching revenue days for the current bill search"
+          : "Revenue appears here after sales are recorded";
+    }
+
+    final start = _parseDay(chartPoints.first['day']?.toString());
+    final end = _parseDay(chartPoints.last['day']?.toString());
+    final rangeLabel = start == null || end == null
+        ? "${chartPoints.length} recent revenue days"
+        : start == end
+        ? _formatSectionDate(start)
+        : "${_formatShortDate(start)} to ${_formatShortDate(end)}";
+
+    return _hasFinderFilters
+        ? "$rangeLabel • ${orders.length} matching bills"
+        : rangeLabel;
   }
 
   List<_OrderSection> _groupedOrders() {
@@ -217,19 +473,16 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
             _dateRange(filterDate)['start']!,
             _dateRange(filterDate)['end']!,
           );
-    final graphFuture = DatabaseHelper.instance.getDailyRevenue();
     final summaryFuture = DatabaseHelper.instance.getTodaySummary();
 
     final orderRows = await ordersFuture;
-    final graph = await graphFuture;
     final summary = await summaryFuture;
 
     if (!mounted) return;
 
     setState(() {
       selectedDate = filterDate;
-      orders = orderRows;
-      revenueData = graph;
+      _allOrders = orderRows;
       todayRevenue = _asDouble(summary['total_revenue']);
       todayProfit = _asDouble(summary['total_profit']);
       todaySales = _asInt(summary['total_sales']);
@@ -251,6 +504,12 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
 
   Future<void> clearDateFilter() async {
     await loadOrders();
+  }
+
+  Future<void> _openBillSearch() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const BillSearchScreen()));
   }
 
   Future<_CsvExportScope?> _pickExportScope() async {
@@ -1167,6 +1426,11 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                   label: "Clear Filter",
                 ),
               _buildToolButton(
+                onPressed: _openBillSearch,
+                icon: Icons.manage_search_rounded,
+                label: "Search Bills",
+              ),
+              _buildToolButton(
                 onPressed: exportToCSV,
                 icon: Icons.ios_share_outlined,
                 label: "Export CSV",
@@ -1192,6 +1456,75 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
             const SizedBox(height: 14),
             const LinearProgressIndicator(),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchPanel() {
+    return _buildPanel(
+      title: "Find Bills",
+      subtitle: _finderSubtitle(),
+      trailing: _hasFinderFilters
+          ? TextButton(
+              onPressed: _clearFinderFilters,
+              child: const Text("Clear"),
+            )
+          : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _searchController,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: _searchHint(),
+              prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon: _hasSearchQuery
+                  ? IconButton(
+                      onPressed: _searchController.clear,
+                      icon: const Icon(Icons.close_rounded),
+                    )
+                  : null,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ..._HistorySearchScope.values.map((scope) {
+                return ChoiceChip(
+                  label: Text(_searchScopeLabel(scope)),
+                  selected: _searchScope == scope,
+                  onSelected: (_) {
+                    setState(() {
+                      _searchScope = scope;
+                    });
+                  },
+                );
+              }),
+              FilterChip(
+                label: const Text("Walk-in Only"),
+                selected: _walkInOnly,
+                onSelected: (selected) {
+                  setState(() {
+                    _walkInOnly = selected;
+                  });
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            _walkInOnly
+                ? "Showing only bills that were saved without a customer name."
+                : "Search can match bill numbers, sold products, customer names, and phone numbers.",
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
         ],
       ),
     );
@@ -1239,7 +1572,8 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
             value: "$todaySales",
             icon: Icons.today_outlined,
             color: const Color(0xFFFFB43A),
-            caption: "Revenue ${_formatCurrency(todayRevenue)}",
+            caption:
+                "Revenue ${_formatCurrency(todayRevenue)} • ${_resultLabel(todayProfit)} ${_formatResultValue(todayProfit)}",
           ),
         ],
       ),
@@ -1261,6 +1595,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     }
 
     final colorScheme = Theme.of(context).colorScheme;
+    final averageRevenue = _averageChartRevenue(chartPoints);
     final maxY = chartPoints
         .map((point) => _asDouble(point['revenue']))
         .fold<double>(
@@ -1275,6 +1610,8 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
         LineChartData(
           minY: 0,
           maxY: effectiveMax,
+          minX: 0,
+          maxX: chartPoints.length == 1 ? 1 : (chartPoints.length - 1).toDouble(),
           gridData: FlGridData(
             show: true,
             drawVerticalLine: false,
@@ -1284,7 +1621,77 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
               strokeWidth: 1,
             ),
           ),
+          extraLinesData: averageRevenue <= 0
+              ? const ExtraLinesData()
+              : ExtraLinesData(
+                  horizontalLines: [
+                    HorizontalLine(
+                      y: averageRevenue,
+                      color: colorScheme.secondary.withAlpha(150),
+                      strokeWidth: 1.6,
+                      dashArray: const [6, 6],
+                      label: HorizontalLineLabel(
+                        show: true,
+                        alignment: Alignment.topRight,
+                        padding: const EdgeInsets.only(right: 6, bottom: 2),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: colorScheme.secondary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                        labelResolver: (_) =>
+                            "Avg ${_formatCompactAmount(averageRevenue)}",
+                      ),
+                    ),
+                  ],
+                ),
           borderData: FlBorderData(show: false),
+          lineTouchData: LineTouchData(
+            handleBuiltInTouches: true,
+            touchTooltipData: LineTouchTooltipData(
+              fitInsideHorizontally: true,
+              fitInsideVertically: true,
+              tooltipBorderRadius: BorderRadius.circular(16),
+              tooltipPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
+              tooltipBorder: BorderSide(
+                color: colorScheme.outline.withAlpha(60),
+              ),
+              getTooltipColor: (_) => colorScheme.surface,
+              getTooltipItems: (spots) {
+                return spots.map((spot) {
+                  final index = spot.x.toInt();
+                  if (index < 0 || index >= chartPoints.length) {
+                    return null;
+                  }
+
+                  final point = chartPoints[index];
+                  final date = _parseDay(point['day']?.toString());
+                  final label = date == null
+                      ? point['day']?.toString() ?? '--'
+                      : _formatSectionDate(date);
+
+                  return LineTooltipItem(
+                    "$label\n",
+                    TextStyle(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    children: [
+                      TextSpan(
+                        text: _formatCurrency(point['revenue']),
+                        style: TextStyle(
+                          color: colorScheme.primary,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  );
+                }).toList();
+              },
+            ),
+          ),
           titlesData: FlTitlesData(
             topTitles: const AxisTitles(
               sideTitles: SideTitles(showTitles: false),
@@ -1299,9 +1706,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                 interval: effectiveMax / 4,
                 getTitlesWidget: (value, meta) {
                   return Text(
-                    value == value.roundToDouble()
-                        ? value.toStringAsFixed(0)
-                        : value.toStringAsFixed(1),
+                    _formatCompactAmount(value),
                     style: Theme.of(context).textTheme.bodySmall,
                   );
                 },
@@ -1314,6 +1719,11 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                 getTitlesWidget: (value, meta) {
                   final index = value.toInt();
                   if (index < 0 || index >= chartPoints.length) {
+                    return const SizedBox.shrink();
+                  }
+                  if (chartPoints.length > 8 &&
+                      index.isOdd &&
+                      index != chartPoints.length - 1) {
                     return const SizedBox.shrink();
                   }
 
@@ -1343,6 +1753,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
               }).toList(),
               isCurved: true,
               barWidth: 4,
+              isStrokeCapRound: true,
               color: colorScheme.primary,
               belowBarData: BarAreaData(
                 show: true,
@@ -1374,10 +1785,50 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   }
 
   Widget _buildChartPanel() {
+    final chartPoints = _chartSeries();
+    final averageRevenue = _averageChartRevenue(chartPoints);
+    final bestDay = _bestRevenueDay(chartPoints);
+    final bestDayDate = _parseDay(bestDay?['day']?.toString());
+    final trendColor = _chartTrendColor(context, chartPoints);
+
     return _buildPanel(
       title: "Revenue Trend",
-      subtitle: "Latest order days in your local history",
-      child: _buildRevenueChart(),
+      subtitle: _chartSubtitle(chartPoints),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (chartPoints.isNotEmpty) ...[
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _OrderChip(
+                  label: "Days",
+                  value: "${chartPoints.length}",
+                ),
+                _OrderChip(
+                  label: "Avg / Day",
+                  value: _formatCurrency(averageRevenue),
+                ),
+                if (bestDay != null)
+                  _OrderChip(
+                    label: "Best Day",
+                    value:
+                        "${_formatCurrency(bestDay['revenue'])}${bestDayDate == null ? '' : ' on ${_formatShortDate(bestDayDate)}'}",
+                    valueColor: Theme.of(context).colorScheme.secondary,
+                  ),
+                _OrderChip(
+                  label: "Trend",
+                  value: _chartTrendLabel(chartPoints),
+                  valueColor: trendColor,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
+          _buildRevenueChart(),
+        ],
+      ),
     );
   }
 
@@ -1503,7 +1954,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          "${_formatTime(orderDate)} • ${order['customer_name']?.toString().trim().isNotEmpty == true ? order['customer_name'].toString().trim() : 'Walk-in Customer'}",
+                          "${_formatTime(orderDate)} • ${_customerLabel(order)}",
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
@@ -1591,19 +2042,25 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     final sections = _groupedOrders();
 
     if (sections.isEmpty) {
+      final hasBaseOrders = _allOrders.isNotEmpty;
       return _buildPanel(
         title: "Orders Timeline",
-        subtitle: selectedDate == null
+        subtitle: hasBaseOrders && _hasFinderFilters
+            ? "No bills matched the current search or walk-in filter"
+            : selectedDate == null
             ? "No sales have been recorded yet"
             : "No sales found for ${_formatSectionDate(selectedDate!)}",
         child: SizedBox(
           height: 180,
           child: Center(
             child: Text(
-              selectedDate == null
+              hasBaseOrders && _hasFinderFilters
+                  ? "Try a different product, customer name, or walk-in filter"
+                  : selectedDate == null
                   ? "No orders yet"
                   : "No sales on the selected date",
               style: Theme.of(context).textTheme.bodyLarge,
+              textAlign: TextAlign.center,
             ),
           ),
         ),
@@ -1632,7 +2089,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading && orders.isEmpty) {
+    if (_isLoading && _allOrders.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text("Sales History")),
         body: const Center(child: CircularProgressIndicator()),
@@ -1650,6 +2107,8 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
             _buildIntroCard(),
             const SizedBox(height: 16),
             _buildToolsPanel(),
+            const SizedBox(height: 16),
+            _buildSearchPanel(),
             const SizedBox(height: 16),
             _buildOverviewPanel(),
             const SizedBox(height: 16),
