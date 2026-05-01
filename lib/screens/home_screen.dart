@@ -40,12 +40,23 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  static const _background = Color(0xFF16131D);
-  static const _surface = Color(0xFF211D27);
-  static const _surfaceSoft = Color(0xFF2A2432);
-  static const _accent = Color(0xFF8B5FE8);
-  static const _border = Color(0xFF312A3A);
   static const double _headerReservedSpace = 108;
+
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _background => Theme.of(context).colorScheme.surfaceContainerLowest;
+  Color get _surface => Theme.of(context).colorScheme.surface;
+  Color get _surfaceSoft => Theme.of(context).colorScheme.surfaceContainerHigh;
+  Color get _accent => Theme.of(context).colorScheme.primary;
+  Color get _border => Theme.of(context).colorScheme.outlineVariant;
+  Color get _primaryText => Theme.of(context).colorScheme.onSurface;
+  Color get _secondaryText => Theme.of(context).colorScheme.onSurfaceVariant;
+  Color get _mutedText => Theme.of(
+    context,
+  ).colorScheme.onSurfaceVariant.withAlpha(_isDark ? 178 : 190);
+  Color get _success => Theme.of(context).colorScheme.secondary;
+  Color get _danger => Theme.of(context).colorScheme.error;
+  Color get _warning => const Color(0xFFF59E0B);
+  Color get _info => const Color(0xFF2563EB);
 
   int _selectedTab = 0;
   bool _isLoading = true;
@@ -624,7 +635,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _currentTabSubtitle() {
     switch (_selectedTab) {
       case 0:
-        return "A dark sales cockpit for your daily business";
+        return "A sales cockpit for your daily business";
       case 1:
         return "Create orders and review recent transactions";
       case 2:
@@ -634,7 +645,7 @@ class _HomeScreenState extends State<HomeScreen> {
       case 4:
         return "Range based performance for sales and revenue";
       default:
-        return "A dark sales cockpit for your daily business";
+        return "A sales cockpit for your daily business";
     }
   }
 
@@ -674,9 +685,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   : Colors.transparent,
               borderRadius: BorderRadius.circular(26),
               border: Border.all(
-                color: _isHeaderScrolled
-                    ? Colors.white.withAlpha(18)
-                    : Colors.transparent,
+                color: _isHeaderScrolled ? _mutedText : Colors.transparent,
               ),
               boxShadow: _isHeaderScrolled
                   ? [
@@ -704,10 +713,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(height: 4),
                       Text(
                         _currentTabSubtitle(),
-                        style: TextStyle(
-                          color: Colors.white.withAlpha(166),
-                          fontSize: 13,
-                        ),
+                        style: TextStyle(color: _mutedText, fontSize: 13),
                       ),
                     ],
                   ),
@@ -788,7 +794,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white.withAlpha(41),
+                color: _mutedText,
                 borderRadius: BorderRadius.circular(16),
               ),
               child: const Icon(Icons.auto_graph_rounded, size: 28),
@@ -839,7 +845,7 @@ class _HomeScreenState extends State<HomeScreen> {
               height: 48,
               width: 48,
               decoration: BoxDecoration(
-                color: Colors.white.withAlpha(15),
+                color: _mutedText,
                 borderRadius: BorderRadius.circular(16),
               ),
               child: const Icon(Icons.calendar_month_outlined),
@@ -857,10 +863,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    _rangeSubtitle(),
-                    style: TextStyle(color: Colors.white.withAlpha(158)),
-                  ),
+                  Text(_rangeSubtitle(), style: TextStyle(color: _mutedText)),
                 ],
               ),
             ),
@@ -896,7 +899,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Text(
                   label,
                   style: TextStyle(
-                    color: Colors.white.withAlpha(230),
+                    color: _mutedText,
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),
@@ -920,13 +923,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           if (caption != null) ...[
             const SizedBox(height: 6),
-            Text(
-              caption,
-              style: TextStyle(
-                color: Colors.white.withAlpha(140),
-                fontSize: 12,
-              ),
-            ),
+            Text(caption, style: TextStyle(color: _mutedText, fontSize: 12)),
           ],
           if (actionLabel != null) ...[
             const SizedBox(height: 10),
@@ -989,10 +986,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final isLoss = totalProfit < 0;
     final isNeutral = totalProfit == 0;
     final accentColor = isLoss
-        ? const Color(0xFFFF7D7D)
+        ? _danger
         : isNeutral
-        ? Colors.white.withAlpha(204)
-        : const Color(0xFFB785FF);
+        ? _mutedText
+        : _accent;
     final resultLabel = isLoss
         ? "Loss"
         : isNeutral
@@ -1015,7 +1012,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Text(
                   "Profit",
                   style: TextStyle(
-                    color: Colors.white.withAlpha(230),
+                    color: _mutedText,
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),
@@ -1047,7 +1044,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 10),
           Text(
             "Based on the selected date range",
-            style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 12),
+            style: TextStyle(color: _mutedText, fontSize: 12),
           ),
         ],
       ),
@@ -1076,7 +1073,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Text(
                   "Products",
                   style: TextStyle(
-                    color: Colors.white.withAlpha(230),
+                    color: _mutedText,
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),
@@ -1086,13 +1083,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 height: 44,
                 width: 44,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFB43A).withAlpha(36),
+                  color: _warning.withAlpha(36),
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: const Icon(
-                  Icons.inventory_2_rounded,
-                  color: Color(0xFFFFB43A),
-                ),
+                child: Icon(Icons.inventory_2_rounded, color: _warning),
               ),
             ],
           ),
@@ -1104,21 +1098,15 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 4),
           Text(
             "$healthyCount healthy in inventory",
-            style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 12),
+            style: TextStyle(color: _mutedText, fontSize: 12),
           ),
           const SizedBox(height: 10),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              _buildMetricPill(
-                label: "Low $_lowStockCount",
-                color: const Color(0xFFFFB43A),
-              ),
-              _buildMetricPill(
-                label: "Out $_outOfStockCount",
-                color: const Color(0xFFFF7D7D),
-              ),
+              _buildMetricPill(label: "Low $_lowStockCount", color: _warning),
+              _buildMetricPill(label: "Out $_outOfStockCount", color: _danger),
             ],
           ),
           if (actionLabel != null) ...[
@@ -1127,18 +1115,14 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Text(
                   actionLabel,
-                  style: const TextStyle(
-                    color: Color(0xFFFFB43A),
+                  style: TextStyle(
+                    color: _warning,
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
                 const Spacer(),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  size: 18,
-                  color: Color(0xFFFFB43A),
-                ),
+                Icon(Icons.chevron_right_rounded, size: 18, color: _warning),
               ],
             ),
           ],
@@ -1193,10 +1177,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(height: 4),
                       Text(
                         subtitle,
-                        style: TextStyle(
-                          color: Colors.white.withAlpha(153),
-                          fontSize: 12,
-                        ),
+                        style: TextStyle(color: _mutedText, fontSize: 12),
                       ),
                     ],
                   ],
@@ -1240,18 +1221,11 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.show_chart_rounded,
-                size: 32,
-                color: Colors.white.withAlpha(179),
-              ),
+              Icon(Icons.show_chart_rounded, size: 32, color: _mutedText),
               const SizedBox(height: 12),
               Text(
                 "No data available",
-                style: TextStyle(
-                  color: Colors.white.withAlpha(191),
-                  fontSize: 16,
-                ),
+                style: TextStyle(color: _mutedText, fontSize: 16),
               ),
             ],
           ),
@@ -1275,13 +1249,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 height: 44,
                 width: 44,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF18293F),
+                  color: _info.withAlpha(28),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: const Icon(
-                  Icons.point_of_sale_rounded,
-                  color: Color(0xFF61A8FF),
-                ),
+                child: Icon(Icons.point_of_sale_rounded, color: _info),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -1295,10 +1266,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 4),
                     Text(
                       "Units ${sale['net_units'] ?? sale['units']} - ${sale['date']}",
-                      style: TextStyle(
-                        color: Colors.white.withAlpha(158),
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: _mutedText, fontSize: 12),
                     ),
                   ],
                 ),
@@ -1316,9 +1284,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ? "Loss ${_formatMoney(profit.abs())}"
                         : "Profit ${_formatMoney(profit)}",
                     style: TextStyle(
-                      color: profit < 0
-                          ? Colors.redAccent
-                          : const Color(0xFF56D47A),
+                      color: profit < 0 ? _danger : _success,
                       fontSize: 12,
                     ),
                   ),
@@ -1338,7 +1304,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Center(
           child: Text(
             "No product sales yet",
-            style: TextStyle(color: Colors.white.withAlpha(184)),
+            style: TextStyle(color: _mutedText),
           ),
         ),
       );
@@ -1362,7 +1328,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 width: 40,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF3A2A14),
+                  color: _warning.withAlpha(28),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Text(
@@ -1383,7 +1349,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text("${product['units']} sold"),
                   Text(
                     _formatMoney(product['revenue']),
-                    style: TextStyle(color: Colors.white.withAlpha(166)),
+                    style: TextStyle(color: _mutedText),
                   ),
                 ],
               ),
@@ -1405,14 +1371,11 @@ class _HomeScreenState extends State<HomeScreen> {
               _inventorySearchQuery = value;
             });
           },
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: _primaryText),
           decoration: InputDecoration(
             hintText: "Search products by name",
-            hintStyle: TextStyle(color: Colors.white.withAlpha(132)),
-            prefixIcon: Icon(
-              Icons.search_rounded,
-              color: Colors.white.withAlpha(168),
-            ),
+            hintStyle: TextStyle(color: _mutedText),
+            prefixIcon: Icon(Icons.search_rounded, color: _mutedText),
             suffixIcon: _inventorySearchQuery.trim().isEmpty
                 ? null
                 : IconButton(
@@ -1422,10 +1385,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         _inventorySearchQuery = '';
                       });
                     },
-                    icon: Icon(
-                      Icons.close_rounded,
-                      color: Colors.white.withAlpha(168),
-                    ),
+                    icon: Icon(Icons.close_rounded, color: _mutedText),
                   ),
             filled: true,
             fillColor: _surfaceSoft,
@@ -1443,7 +1403,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(18),
-              borderSide: const BorderSide(color: _accent, width: 1.2),
+              borderSide: BorderSide(color: _accent, width: 1.2),
             ),
           ),
         ),
@@ -1451,7 +1411,7 @@ class _HomeScreenState extends State<HomeScreen> {
         Text(
           "Showing $visibleCount of $_productCount products",
           style: TextStyle(
-            color: Colors.white.withAlpha(150),
+            color: _mutedText,
             fontSize: 12,
             fontWeight: FontWeight.w600,
           ),
@@ -1460,10 +1420,10 @@ class _HomeScreenState extends State<HomeScreen> {
         DropdownButtonFormField<_InventorySortOption>(
           initialValue: _inventorySortOption,
           dropdownColor: _surface,
-          style: const TextStyle(color: Colors.white, fontSize: 14),
+          style: TextStyle(color: _primaryText, fontSize: 14),
           decoration: InputDecoration(
             labelText: "Sort products",
-            labelStyle: TextStyle(color: Colors.white.withAlpha(150)),
+            labelStyle: TextStyle(color: _mutedText),
             filled: true,
             fillColor: _surfaceSoft,
             contentPadding: const EdgeInsets.symmetric(
@@ -1480,16 +1440,16 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(18),
-              borderSide: const BorderSide(color: _accent, width: 1.2),
+              borderSide: BorderSide(color: _accent, width: 1.2),
             ),
           ),
-          iconEnabledColor: Colors.white,
+          iconEnabledColor: _secondaryText,
           items: _InventorySortOption.values.map((option) {
             return DropdownMenuItem<_InventorySortOption>(
               value: option,
               child: Text(
                 _inventorySortLabel(option),
-                style: const TextStyle(color: Colors.white),
+                style: TextStyle(color: _primaryText),
               ),
             );
           }).toList(),
@@ -1526,17 +1486,17 @@ class _HomeScreenState extends State<HomeScreen> {
           style: TextStyle(
             fontWeight: FontWeight.w700,
             color: isOut
-                ? Colors.redAccent
+                ? _danger
                 : isLow
-                ? Colors.orangeAccent
-                : Colors.white,
+                ? _warning
+                : _primaryText,
           ),
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 8),
           child: Text(
             "Stock: $stock - ${_formatMoney(product['selling_price'])}",
-            style: TextStyle(color: Colors.white.withAlpha(173)),
+            style: TextStyle(color: _mutedText),
           ),
         ),
         trailing: isOut
@@ -1552,7 +1512,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (items.isEmpty) {
       return Text(
         "Everything looks healthy right now.",
-        style: TextStyle(color: Colors.white.withAlpha(166)),
+        style: TextStyle(color: _mutedText),
       );
     }
 
@@ -1578,7 +1538,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 4),
                     Text(
                       "Current stock: ${product['stock']}",
-                      style: TextStyle(color: Colors.white.withAlpha(168)),
+                      style: TextStyle(color: _mutedText),
                     ),
                   ],
                 ),
@@ -1587,7 +1547,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 onPressed: () => _handleProductLongPress(product),
                 style: FilledButton.styleFrom(
                   backgroundColor: _accent.withAlpha(46),
-                  foregroundColor: Colors.white,
+                  foregroundColor: _primaryText,
                 ),
                 child: const Text("Adjust"),
               ),
@@ -1605,7 +1565,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Center(
           child: Text(
             "No revenue data for this range",
-            style: TextStyle(color: Colors.white.withAlpha(179)),
+            style: TextStyle(color: _mutedText),
           ),
         ),
       );
@@ -1630,7 +1590,7 @@ class _HomeScreenState extends State<HomeScreen> {
             drawVerticalLine: false,
             horizontalInterval: effectiveMax / 4,
             getDrawingHorizontalLine: (_) =>
-                FlLine(color: Colors.white.withAlpha(20), strokeWidth: 1),
+                FlLine(color: _mutedText, strokeWidth: 1),
           ),
           borderData: FlBorderData(show: false),
           titlesData: FlTitlesData(
@@ -1650,10 +1610,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     value == value.roundToDouble()
                         ? value.toStringAsFixed(0)
                         : value.toStringAsFixed(1),
-                    style: TextStyle(
-                      color: Colors.white.withAlpha(128),
-                      fontSize: 10,
-                    ),
+                    style: TextStyle(color: _mutedText, fontSize: 10),
                   );
                 },
               ),
@@ -1671,10 +1628,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
                       revenueSeries[index]['label'].toString(),
-                      style: TextStyle(
-                        color: Colors.white.withAlpha(140),
-                        fontSize: 10,
-                      ),
+                      style: TextStyle(color: _mutedText, fontSize: 10),
                     ),
                   );
                 },
@@ -1760,10 +1714,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 4),
                   Text(
                     subtitle,
-                    style: TextStyle(
-                      color: Colors.white.withAlpha(158),
-                      fontSize: 12,
-                    ),
+                    style: TextStyle(color: _mutedText, fontSize: 12),
                   ),
                 ],
               ),
@@ -1785,7 +1736,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: TextStyle(color: Colors.white.withAlpha(158))),
+          Text(label, style: TextStyle(color: _mutedText)),
           const SizedBox(height: 10),
           Text(
             value,
@@ -1800,10 +1751,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Row(
       children: [
         Expanded(
-          child: Text(
-            label,
-            style: TextStyle(color: Colors.white.withAlpha(173)),
-          ),
+          child: Text(label, style: TextStyle(color: _mutedText)),
         ),
         Text(value, style: const TextStyle(fontWeight: FontWeight.w700)),
       ],
@@ -1851,13 +1799,13 @@ class _HomeScreenState extends State<HomeScreen> {
             label: "Revenue",
             value: _formatMoney(totalRevenue),
             icon: Icons.trending_up_rounded,
-            accentColor: const Color(0xFF57D77F),
+            accentColor: _success,
           ),
           _buildMetricCard(
             label: "Sales",
             value: "$totalSales",
             icon: Icons.receipt_long_rounded,
-            accentColor: const Color(0xFF5F95FF),
+            accentColor: _info,
             actionLabel: "Open reports",
             onTap: () => _selectTab(4),
           ),
@@ -1907,7 +1855,7 @@ class _HomeScreenState extends State<HomeScreen> {
               title: "Sales History",
               subtitle: "Review orders, export records, and share bills",
               icon: Icons.history_rounded,
-              color: const Color(0xFF4B8CFF),
+              color: _info,
               onTap: () => _pushAndRefresh(const SalesHistoryScreen()),
             ),
             const SizedBox(height: 12),
@@ -1915,7 +1863,7 @@ class _HomeScreenState extends State<HomeScreen> {
               title: "Customers",
               subtitle: "Search customers and open their purchase history",
               icon: Icons.people_alt_outlined,
-              color: const Color(0xFF57D77F),
+              color: _success,
               onTap: () => _pushAndRefresh(const CustomersScreen()),
             ),
           ],
@@ -1967,7 +1915,7 @@ class _HomeScreenState extends State<HomeScreen> {
               title: "Add Product",
               subtitle: "Create a new product in inventory",
               icon: Icons.add_box_outlined,
-              color: const Color(0xFFFFB43A),
+              color: _warning,
               onTap: () => _pushAndRefresh(const AddProductScreen()),
             ),
             const SizedBox(height: 12),
@@ -1975,7 +1923,7 @@ class _HomeScreenState extends State<HomeScreen> {
               title: "Stock Adjustment",
               subtitle: "Add, remove or set exact stock values",
               icon: Icons.tune_rounded,
-              color: const Color(0xFF57D77F),
+              color: _success,
               onTap: () => _openStockAdjustment(),
             ),
           ],
@@ -1992,14 +1940,11 @@ class _HomeScreenState extends State<HomeScreen> {
             _buildInventoryControls(visibleProducts.length),
             const SizedBox(height: 16),
             if (products.isEmpty)
-              Text(
-                "No products added yet",
-                style: TextStyle(color: Colors.white.withAlpha(179)),
-              )
+              Text("No products added yet", style: TextStyle(color: _mutedText))
             else if (visibleProducts.isEmpty)
               Text(
                 "No products match your search",
-                style: TextStyle(color: Colors.white.withAlpha(179)),
+                style: TextStyle(color: _mutedText),
               )
             else
               Column(children: visibleProducts.map(_buildProductItem).toList()),
@@ -2087,8 +2032,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       bottomNavigationBar: NavigationBar(
         height: 78,
-        backgroundColor: const Color(0xFF1B1721),
-        indicatorColor: _accent,
+        backgroundColor: _surface,
+        indicatorColor: _accent.withAlpha(_isDark ? 70 : 36),
         selectedIndex: _selectedTab,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         onDestinationSelected: _selectTab,
