@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'app_settings_controller.dart';
 import 'screens/home_screen.dart';
+import 'services/account_sync_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  unawaited(AccountSyncService.instance.initialize());
   await AppSettingsController.instance.load();
   runApp(MyApp(controller: AppSettingsController.instance));
 }

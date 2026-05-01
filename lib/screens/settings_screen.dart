@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../app_settings_controller.dart';
 import '../database/database_helper.dart';
+import '../services/account_sync_service.dart';
 import '../services/sales_export_service.dart';
 import 'how_to_use_screen.dart';
 import 'store_details_screen.dart';
@@ -18,14 +19,30 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final _controller = AppSettingsController.instance;
+  final _syncService = AccountSyncService.instance;
 
   Map<String, String> _storeDetails = {};
   bool _isBusy = false;
+  CloudBackupInfo? _cloudBackupInfo;
 
   @override
   void initState() {
     super.initState();
+    _syncService.addListener(_handleSyncChanged);
     _loadStoreDetails();
+    _loadCloudBackupInfo();
+  }
+
+  @override
+  void dispose() {
+    _syncService.removeListener(_handleSyncChanged);
+    super.dispose();
+  }
+
+  void _handleSyncChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _loadStoreDetails() async {
@@ -40,6 +57,107 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  String _formatCloudDate(DateTime? value) {
+    if (value == null) return 'No cloud backup yet';
+    return DateFormat('MMM d, yyyy h:mm a').format(value.toLocal());
+  }
+
+  Future<void> _loadCloudBackupInfo() async {
+    if (!_syncService.isSignedIn) {
+      if (!mounted) return;
+      setState(() {
+        _cloudBackupInfo = null;
+      });
+      return;
+    }
+
+    try {
+      final info = await _syncService.getLatestBackupInfo();
+      if (!mounted) return;
+      setState(() {
+        _cloudBackupInfo = info;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _cloudBackupInfo = null;
+      });
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    try {
+      await _syncService.signIn();
+      await _loadCloudBackupInfo();
+      if (!mounted) return;
+      _showMessage("Signed in as ${_syncService.email}");
+    } catch (error) {
+      if (!mounted) return;
+      _showMessage(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Future<void> _signOutFromGoogle() async {
+    await _syncService.signOut();
+    await _loadCloudBackupInfo();
+    if (!mounted) return;
+    _showMessage("Signed out");
+  }
+
+  Future<void> _backupToCloud() async {
+    try {
+      final info = await _syncService.uploadCurrentDatabase();
+      if (!mounted) return;
+      setState(() {
+        _cloudBackupInfo = info;
+      });
+      _showMessage("Cloud backup saved for ${_syncService.email}");
+    } catch (error) {
+      if (!mounted) return;
+      _showMessage(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Future<void> _restoreFromCloud() async {
+    final shouldRestore = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text("Restore cloud backup?"),
+          content: Text(
+            "This will replace the local Sale Buddy data on this device with the backup saved for ${_syncService.email}.",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text("Cancel"),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text("Restore"),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldRestore != true) return;
+
+    try {
+      final info = await _syncService.restoreLatestDatabase();
+      await _controller.reload();
+      await _loadStoreDetails();
+      if (!mounted) return;
+      setState(() {
+        _cloudBackupInfo = info;
+      });
+      _showMessage("Cloud backup restored");
+    } catch (error) {
+      if (!mounted) return;
+      _showMessage(error.toString().replaceFirst('Exception: ', ''));
+    }
   }
 
   Future<String?> _pickBackupAction() {
@@ -192,6 +310,87 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildAccountSection() {
+    final signedIn = _syncService.isSignedIn;
+    final busy = _syncService.isBusy;
+    final name = _syncService.displayName?.trim() ?? '';
+    final email = _syncService.email ?? '';
+    final title = signedIn
+        ? (name.isEmpty ? email : name)
+        : "No Google account connected";
+    final subtitle = signedIn
+        ? "$email\nLast cloud backup: ${_formatCloudDate(_cloudBackupInfo?.modifiedTime)}"
+        : "Sign in with Google to save and restore this device's data from your account.";
+
+    return _buildSection(
+      title: "Account and Cloud Backup",
+      subtitle: "Save and restore data with Google Drive app data",
+      child: Column(
+        children: [
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: CircleAvatar(
+              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+              backgroundImage: _syncService.photoUrl == null
+                  ? null
+                  : NetworkImage(_syncService.photoUrl!),
+              child: _syncService.photoUrl == null
+                  ? const Icon(Icons.account_circle_outlined)
+                  : null,
+            ),
+            title: Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            subtitle: Text(subtitle),
+          ),
+          const SizedBox(height: 12),
+          if (!signedIn)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: busy ? null : _signInWithGoogle,
+                icon: const Icon(Icons.login_rounded),
+                label: const Text("Sign in with Google"),
+              ),
+            )
+          else ...[
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: busy ? null : _backupToCloud,
+                icon: const Icon(Icons.cloud_upload_outlined),
+                label: const Text("Save Backup to Google"),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: busy ? null : _restoreFromCloud,
+                icon: const Icon(Icons.cloud_download_outlined),
+                label: const Text("Restore from Google"),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton.icon(
+                onPressed: busy ? null : _signOutFromGoogle,
+                icon: const Icon(Icons.logout_rounded),
+                label: const Text("Sign Out"),
+              ),
+            ),
+          ],
+          if (busy) ...[
+            const SizedBox(height: 14),
+            const LinearProgressIndicator(),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -206,6 +405,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              _buildAccountSection(),
               _buildSection(
                 title: "Appearance",
                 subtitle: "Change how the application looks",
