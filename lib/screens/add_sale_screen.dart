@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../app_settings_controller.dart';
 import '../database/database_helper.dart';
 import 'add_product_screen.dart';
+import 'barcode_scanner_screen.dart';
 
 enum DiscountMode { manual, soldPrice, percentage }
 
@@ -159,14 +160,84 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     });
   }
 
-  Future<void> _openAddProduct() async {
+  Future<void> _openAddProduct({String? initialBarcode}) async {
     final navigator = Navigator.of(context);
     await navigator.push(
-      MaterialPageRoute(builder: (_) => const AddProductScreen()),
+      MaterialPageRoute(
+        builder: (_) => AddProductScreen(initialBarcode: initialBarcode),
+      ),
     );
 
     if (!mounted) return;
     await _loadProducts();
+  }
+
+  Future<bool> _confirmAddScannedProduct(String barcode) async {
+    final shouldAdd = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text("Product Not Found"),
+          content: Text(
+            "No saved product uses barcode $barcode. Add it to inventory first?",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text("Cancel"),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.add_box_outlined),
+              label: const Text("Add Product"),
+            ),
+          ],
+        );
+      },
+    );
+
+    return shouldAdd == true;
+  }
+
+  Future<void> _scanBarcodeForSale() async {
+    FocusScope.of(context).unfocus();
+    final code = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => const BarcodeScannerScreen(title: "Scan for Sale"),
+      ),
+    );
+    final cleanBarcode = code?.trim() ?? '';
+    if (cleanBarcode.isEmpty) return;
+
+    await _loadProducts();
+    var product =
+        _loadedProductByBarcode(cleanBarcode) ??
+        await DatabaseHelper.instance.findProductByBarcode(cleanBarcode);
+
+    if (product == null) {
+      final shouldAdd = await _confirmAddScannedProduct(cleanBarcode);
+      if (!mounted || !shouldAdd) return;
+      await _openAddProduct(initialBarcode: cleanBarcode);
+      product =
+          _loadedProductByBarcode(cleanBarcode) ??
+          await DatabaseHelper.instance.findProductByBarcode(cleanBarcode);
+      if (!mounted || product == null) return;
+    }
+
+    setState(() {
+      _editingItemIndex = null;
+      _showCostPrice = false;
+      _showProfitLoss = false;
+      _setComposerProduct(product);
+      unitsController.text = '1';
+    });
+    _syncCalculatedDiscount();
+
+    if (_availableStockForComposer() <= 0) {
+      _showMessage("No stock available for ${product['name']}.");
+    } else {
+      _showMessage("Scanned ${product['name']}. Review and add it to sale.");
+    }
   }
 
   void _showMessage(String message) {
@@ -184,6 +255,22 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     if (value is int) return value;
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  String _barcodeFromProduct(Map<String, dynamic> product) {
+    return product['barcode']?.toString().trim() ?? '';
+  }
+
+  Map<String, dynamic>? _loadedProductByBarcode(String barcode) {
+    final cleanBarcode = barcode.trim();
+    if (cleanBarcode.isEmpty) return null;
+
+    for (final product in products) {
+      if (_barcodeFromProduct(product) == cleanBarcode) {
+        return product;
+      }
+    }
+    return null;
   }
 
   String _formatAmount(double value) {
@@ -427,7 +514,19 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     }
 
     return entries.where((entry) {
-      return entry.label.toLowerCase().contains(query);
+      Map<String, dynamic>? product;
+      for (final candidate in products) {
+        if (candidate['id'] == entry.value) {
+          product = candidate;
+          break;
+        }
+      }
+
+      final barcode = product == null
+          ? ''
+          : _barcodeFromProduct(product).toLowerCase();
+      return entry.label.toLowerCase().contains(query) ||
+          barcode.contains(query);
     }).toList();
   }
 
@@ -959,7 +1058,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: _openAddProduct,
+                onPressed: () => _openAddProduct(),
                 icon: const Icon(Icons.add_box_outlined),
                 label: const Text("Add Product First"),
               ),
@@ -1237,10 +1336,19 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                "Pick a product, apply discount, and add it to the running sale.",
+                "Pick a product or scan its barcode, apply discount, and add it to the running sale.",
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 14),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: _scanBarcodeForSale,
+                  icon: const Icon(Icons.qr_code_scanner_rounded),
+                  label: const Text("Scan Barcode"),
+                ),
+              ),
+              const SizedBox(height: 12),
               DropdownMenu<int>(
                 key: ValueKey(
                   '${selectedProductId ?? 'none'}|${products.length}|${_editingItemIndex ?? 'new'}',
@@ -1256,7 +1364,8 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                 leadingIcon: const Icon(Icons.search_rounded),
                 label: const Text("Select Product"),
                 hintText: "Tap to search or browse products",
-                helperText: "Type a product name to filter the list.",
+                helperText:
+                    "Type a product name or barcode to filter the list.",
                 filterCallback: _filterProductEntries,
                 dropdownMenuEntries: _productMenuEntries,
                 onSelected: _selectProduct,

@@ -10,6 +10,7 @@ import 'add_product_screen.dart';
 import 'add_sale_screen.dart';
 import 'customers_screen.dart';
 import 'how_to_use_screen.dart';
+import 'pos_screen.dart';
 import 'settings_screen.dart';
 import 'sales_history_screen.dart';
 import 'stock_adjust_screen.dart';
@@ -209,7 +210,8 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       final name = product['name']?.toString().toLowerCase() ?? '';
-      return name.contains(query);
+      final barcode = product['barcode']?.toString().toLowerCase() ?? '';
+      return name.contains(query) || barcode.contains(query);
     }).toList();
 
     filtered.sort((a, b) {
@@ -637,7 +639,7 @@ class _HomeScreenState extends State<HomeScreen> {
       case 0:
         return "A sales cockpit for your daily business";
       case 1:
-        return "Create orders and review recent transactions";
+        return "Use POS, create orders, and review transactions";
       case 2:
         return "Manage products and quick stock edits";
       case 3:
@@ -1373,7 +1375,7 @@ class _HomeScreenState extends State<HomeScreen> {
           },
           style: TextStyle(color: _primaryText),
           decoration: InputDecoration(
-            hintText: "Search products by name",
+            hintText: "Search products by name or barcode",
             hintStyle: TextStyle(color: _mutedText),
             prefixIcon: Icon(Icons.search_rounded, color: _mutedText),
             suffixIcon: _inventorySearchQuery.trim().isEmpty
@@ -1468,6 +1470,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildProductItem(Map<String, dynamic> product) {
     final stock = _asInt(product['stock']);
+    final barcode = product['barcode']?.toString().trim() ?? '';
     final isOut = stock == 0;
     final isLow = stock > 0 && stock <= 5;
 
@@ -1495,7 +1498,7 @@ class _HomeScreenState extends State<HomeScreen> {
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 8),
           child: Text(
-            "Stock: $stock - ${_formatMoney(product['selling_price'])}",
+            "Stock: $stock - ${_formatMoney(product['selling_price'])}${barcode.isEmpty ? '' : ' - Barcode: $barcode'}",
             style: TextStyle(color: _mutedText),
           ),
         ),
@@ -1844,10 +1847,18 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           children: [
             _buildWideActionTile(
-              title: "Record Sale",
-              subtitle: "Create a new multi-product order",
-              icon: Icons.shopping_cart_checkout_rounded,
+              title: "POS Terminal",
+              subtitle: "Fast checkout with tap-to-add products and payment",
+              icon: Icons.point_of_sale_rounded,
               color: _accent,
+              onTap: () => _pushAndRefresh(const PosScreen()),
+            ),
+            const SizedBox(height: 12),
+            _buildWideActionTile(
+              title: "Record Sale",
+              subtitle: "Create a detailed multi-product order",
+              icon: Icons.shopping_cart_checkout_rounded,
+              color: _info,
               onTap: () => _pushAndRefresh(const AddSaleScreen()),
             ),
             const SizedBox(height: 12),

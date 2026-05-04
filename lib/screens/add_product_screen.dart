@@ -5,11 +5,14 @@ import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../database/database_helper.dart';
+import '../services/product_lookup_service.dart';
+import 'barcode_scanner_screen.dart';
 
 class AddProductScreen extends StatefulWidget {
-  const AddProductScreen({super.key, this.initialProduct});
+  const AddProductScreen({super.key, this.initialProduct, this.initialBarcode});
 
   final Map<String, dynamic>? initialProduct;
+  final String? initialBarcode;
 
   @override
   State<AddProductScreen> createState() => _AddProductScreenState();
@@ -18,7 +21,9 @@ class AddProductScreen extends StatefulWidget {
 class _AddProductScreenState extends State<AddProductScreen> {
   final _formKey = GlobalKey<FormState>();
   final _imagePicker = ImagePicker();
+  final _productLookupService = ProductLookupService();
 
+  final barcodeController = TextEditingController();
   final nameController = TextEditingController();
   final costController = TextEditingController();
   final priceController = TextEditingController();
@@ -30,18 +35,23 @@ class _AddProductScreenState extends State<AddProductScreen> {
   Uint8List? _selectedPhotoBytes;
   String? _selectedPhotoLabel;
   bool _isSaving = false;
+  bool _isLookingUpBarcode = false;
+  bool _didHandleInitialBarcode = false;
 
   @override
   void initState() {
     super.initState();
     if (widget.initialProduct != null) {
       _applySelectedProduct(widget.initialProduct!, notify: false);
+    } else if ((widget.initialBarcode ?? '').trim().isNotEmpty) {
+      barcodeController.text = widget.initialBarcode!.trim();
     }
     _loadProducts();
   }
 
   @override
   void dispose() {
+    barcodeController.dispose();
     nameController.dispose();
     costController.dispose();
     priceController.dispose();
@@ -67,6 +77,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
     });
 
     _updateMatchingProducts(nameController.text);
+
+    if (!_didHandleInitialBarcode &&
+        widget.initialProduct == null &&
+        _cleanBarcode(widget.initialBarcode).isNotEmpty) {
+      _didHandleInitialBarcode = true;
+      await _handleBarcodeValue(_cleanBarcode(widget.initialBarcode));
+    }
   }
 
   double? _parseAmount(String value) {
@@ -99,6 +116,33 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   String _normalizedName() {
     return nameController.text.trim().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  String _cleanBarcode(String? value) {
+    return value?.trim().replaceAll(RegExp(r'\s+'), '') ?? '';
+  }
+
+  String _barcodeFromProduct(Map<String, dynamic> product) {
+    return _cleanBarcode(product['barcode']?.toString());
+  }
+
+  Map<String, dynamic>? _loadedProductByBarcode(String barcode) {
+    final cleanBarcode = _cleanBarcode(barcode);
+    if (cleanBarcode.isEmpty) return null;
+
+    for (final product in _products) {
+      if (_barcodeFromProduct(product) == cleanBarcode) {
+        return product;
+      }
+    }
+    return null;
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   bool get _isUpdatingExisting => _selectedExistingProduct != null;
@@ -190,6 +234,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
     Map<String, dynamic> product, {
     bool notify = true,
   }) {
+    barcodeController.text = _barcodeFromProduct(product);
     nameController.text = product['name']?.toString() ?? '';
     costController.text = _formatAmount(
       _parseAmount(product['cost_price']?.toString() ?? '') ?? 0,
@@ -222,11 +267,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
       _selectedExistingProduct = null;
       _matchingProducts = [];
     });
+    barcodeController.clear();
     stockController.clear();
     _updateMatchingProducts(nameController.text);
   }
 
   void _resetForm() {
+    barcodeController.clear();
     nameController.clear();
     costController.clear();
     priceController.clear();
@@ -239,6 +286,84 @@ class _AddProductScreenState extends State<AddProductScreen> {
       _selectedPhotoLabel = null;
     });
     _refreshPreview();
+  }
+
+  Future<void> _scanBarcodeForProduct() async {
+    FocusScope.of(context).unfocus();
+    final code = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => const BarcodeScannerScreen(title: "Scan Product"),
+      ),
+    );
+    if (code == null || code.trim().isEmpty) return;
+    await _handleBarcodeValue(code);
+  }
+
+  Future<void> _handleBarcodeValue(String value) async {
+    final cleanBarcode = _cleanBarcode(value);
+    if (cleanBarcode.isEmpty) return;
+
+    barcodeController.text = cleanBarcode;
+
+    final loadedProduct = _loadedProductByBarcode(cleanBarcode);
+    final product =
+        loadedProduct ??
+        await DatabaseHelper.instance.findProductByBarcode(cleanBarcode);
+    if (product != null) {
+      if (!mounted) return;
+      _applySelectedProduct(product);
+      _showMessage("Existing product loaded from barcode.");
+      return;
+    }
+
+    await _lookupBarcodeOnline(cleanBarcode);
+  }
+
+  Future<void> _lookupBarcodeOnline([String? barcode]) async {
+    final cleanBarcode = _cleanBarcode(barcode ?? barcodeController.text);
+    if (cleanBarcode.isEmpty) {
+      _showMessage("Scan or enter a barcode first.");
+      return;
+    }
+
+    setState(() {
+      _isLookingUpBarcode = true;
+    });
+
+    try {
+      final result = await _productLookupService.findByBarcode(cleanBarcode);
+      if (!mounted) return;
+
+      barcodeController.text = cleanBarcode;
+      if (result == null) {
+        _showMessage(
+          "No online details found in public databases. Enter the product manually once; future scans will match it locally.",
+        );
+        return;
+      }
+
+      if (!_isUpdatingExisting && nameController.text.trim().isEmpty) {
+        nameController.text = result.displayName;
+        _updateMatchingProducts(result.displayName);
+      }
+
+      final details = [
+        result.displayName,
+        if ((result.quantity ?? '').isNotEmpty) result.quantity!,
+      ].join(" - ");
+      _showMessage(
+        "Found in ${result.source}: $details. Add price and stock to save.",
+      );
+    } on ProductLookupException catch (error) {
+      if (!mounted) return;
+      _showMessage(error.message);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLookingUpBarcode = false;
+        });
+      }
+    }
   }
 
   Future<ImageSource?> _pickPhotoSource() {
@@ -353,6 +478,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
     FocusScope.of(context).unfocus();
 
     final baseName = _normalizedName();
+    final cleanBarcode = _cleanBarcode(barcodeController.text);
     final cost = _parseAmount(costController.text)!;
     final price = _parseAmount(priceController.text)!;
     final stock = _isUpdatingExisting && stockController.text.trim().isEmpty
@@ -369,6 +495,17 @@ class _AddProductScreenState extends State<AddProductScreen> {
       if (_selectedExistingProduct != null) {
         final existingProduct = _selectedExistingProduct!;
         final updatedStock = _existingStock + stock;
+        final duplicateBarcode = cleanBarcode.isEmpty
+            ? null
+            : await DatabaseHelper.instance.findProductByBarcode(cleanBarcode);
+        if (duplicateBarcode != null &&
+            duplicateBarcode['id'] != existingProduct['id']) {
+          message = "Another product already uses this barcode.";
+          if (!mounted) return;
+          messenger.showSnackBar(SnackBar(content: Text(message)));
+          return;
+        }
+
         final duplicateProduct = await DatabaseHelper.instance.findProduct(
           baseName,
           price,
@@ -389,6 +526,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
           costPrice: cost,
           sellingPrice: price,
           stock: updatedStock,
+          barcode: cleanBarcode,
           photoBytes: photoBytes,
         );
 
@@ -396,12 +534,41 @@ class _AddProductScreenState extends State<AddProductScreen> {
             ? "Product updated. Stock is now $updatedStock."
             : "Product details updated.";
       } else {
+        final existingBarcodeProduct = cleanBarcode.isEmpty
+            ? null
+            : await DatabaseHelper.instance.findProductByBarcode(cleanBarcode);
+        if (existingBarcodeProduct != null) {
+          if (!mounted) return;
+          _applySelectedProduct(existingBarcodeProduct);
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text(
+                "Barcode already belongs to an existing product. It has been loaded for editing.",
+              ),
+            ),
+          );
+          return;
+        }
+
         final existingSamePrice = await DatabaseHelper.instance.findProduct(
           baseName,
           price,
         );
 
         if (existingSamePrice != null) {
+          final samePriceBarcode = _cleanBarcode(
+            existingSamePrice['barcode']?.toString(),
+          );
+          if (cleanBarcode.isNotEmpty &&
+              samePriceBarcode.isNotEmpty &&
+              samePriceBarcode != cleanBarcode) {
+            message =
+                "A product with this name and selling price already uses another barcode.";
+            if (!mounted) return;
+            messenger.showSnackBar(SnackBar(content: Text(message)));
+            return;
+          }
+
           final currentStock = existingSamePrice['stock'];
           final newStock =
               (currentStock is num ? currentStock.toInt() : 0) + stock;
@@ -412,6 +579,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
             costPrice: cost,
             sellingPrice: price,
             stock: newStock,
+            barcode: cleanBarcode.isEmpty
+                ? existingSamePrice['barcode']?.toString()
+                : cleanBarcode,
             photoBytes:
                 photoBytes ?? _photoBytesFrom(existingSamePrice['photo_bytes']),
           );
@@ -429,6 +599,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
             'cost_price': cost,
             'selling_price': price,
             'stock': stock,
+            'barcode': cleanBarcode.isEmpty ? null : cleanBarcode,
             'photo_bytes': photoBytes,
           });
 
@@ -513,6 +684,56 @@ class _AddProductScreenState extends State<AddProductScreen> {
               const Text(
                 "Product Details",
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: barcodeController,
+                keyboardType: TextInputType.text,
+                textInputAction: TextInputAction.next,
+                decoration: InputDecoration(
+                  labelText: "Barcode",
+                  helperText:
+                      "Optional. UPC/EAN codes can be looked up online; QR or serial codes still work for local scans.",
+                  prefixIcon: const Icon(Icons.qr_code_2_rounded),
+                  suffixIcon: IconButton(
+                    tooltip: "Scan barcode",
+                    onPressed: _isSaving || _isLookingUpBarcode
+                        ? null
+                        : _scanBarcodeForProduct,
+                    icon: const Icon(Icons.qr_code_scanner_rounded),
+                  ),
+                ),
+                onChanged: _refreshPreview,
+                onFieldSubmitted: _handleBarcodeValue,
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _isSaving || _isLookingUpBarcode
+                        ? null
+                        : _scanBarcodeForProduct,
+                    icon: const Icon(Icons.qr_code_scanner_rounded),
+                    label: const Text("Scan Barcode"),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _isSaving || _isLookingUpBarcode
+                        ? null
+                        : () => _lookupBarcodeOnline(),
+                    icon: _isLookingUpBarcode
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.travel_explore_rounded),
+                    label: Text(
+                      _isLookingUpBarcode ? "Looking Up" : "Lookup Online",
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 14),
               TextFormField(
@@ -839,6 +1060,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
               ],
             ),
             const SizedBox(height: 16),
+            if (_cleanBarcode(barcodeController.text).isNotEmpty)
+              _buildPreviewRow(
+                "Barcode",
+                _cleanBarcode(barcodeController.text),
+              ),
             _buildPreviewRow("Cost Price", _formatCurrency(_costValue)),
             _buildPreviewRow("Selling Price", _formatCurrency(_sellingValue)),
             _buildPreviewRow(

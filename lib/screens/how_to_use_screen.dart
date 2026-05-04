@@ -77,7 +77,7 @@ class HowToUseScreen extends StatelessWidget {
             icon: Icons.add_box_outlined,
             title: "Add or Update Products",
             description:
-                "Use Add Product to create a new product with name, cost price, selling price, opening stock, and an optional product photo. While typing the name, matching products appear below the field, and selecting one lets you correct the name, update prices, and add more stock to the existing product.",
+                "Use Add Product to create a new product with barcode, name, cost price, selling price, opening stock, and an optional product photo. Scan or type a barcode to load an existing local product; if it is not saved yet, Lookup Online can prefill product details when public UPC/EAN data is available. QR codes and serial codes can still be saved manually for future local scans.",
           ),
           _stepCard(
             icon: Icons.photo_camera_outlined,
@@ -86,10 +86,16 @@ class HowToUseScreen extends StatelessWidget {
                 "You can attach a product photo from camera or gallery. Inventory items on the home screen can be long pressed for product edit and stock actions, so you can quickly fix names, prices, or stock without opening multiple screens.",
           ),
           _stepCard(
+            icon: Icons.point_of_sale_rounded,
+            title: "POS Terminal",
+            description:
+                "Use POS Terminal from the Sales tab for fast counter billing. Search products, scan a saved product barcode, or tap items to add them to the cart. Adjust quantities with plus or minus buttons, add optional customer details, apply a bill discount, choose the payment method and status, then complete the sale. POS sales reduce stock and appear in Sales History, customer history, reports, and bills just like regular sales.",
+          ),
+          _stepCard(
             icon: Icons.shopping_cart_checkout_rounded,
             title: "Record Sales",
             description:
-                "Use Record Sale or New Order to add one or more products in a single order. Search for products inside the product box, add items one by one, and apply discounts by manual amount, sold price, or percentage. Customer name and phone number are optional, and cost price / profit are hidden unless you confirm to view them.",
+                "Use Record Sale or New Order when you need a more detailed sale entry. Search for products inside the product box or scan a saved barcode to select the product, add items one by one, and apply line discounts by manual amount, sold price, or percentage. Customer name and phone number are optional, and cost price / profit are hidden unless you confirm to view them.",
           ),
           _stepCard(
             icon: Icons.payments_outlined,

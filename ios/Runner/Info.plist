@@ -24,6 +24,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Sale Buddy uses the camera to scan product barcodes and take product photos.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Sale Buddy lets you choose product photos from your library.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

@@ -9,7 +9,7 @@ class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
   static const _databaseName = 'sales.db';
-  static const _databaseVersion = 7;
+  static const _databaseVersion = 8;
   static const _groupKeyExpr =
       "COALESCE(sales.sale_group_id, 'legacy-' || CAST(sales.id AS TEXT))";
 
@@ -41,6 +41,7 @@ class DatabaseHelper {
         cost_price REAL NOT NULL,
         selling_price REAL NOT NULL,
         stock INTEGER NOT NULL,
+        barcode TEXT,
         photo_bytes BLOB
       )
     ''');
@@ -190,6 +191,12 @@ class DatabaseHelper {
           restocked INTEGER NOT NULL DEFAULT 1
         )
       ''');
+    }
+
+    if (oldVersion < 8) {
+      await _ensureProductColumns(db, {
+        'barcode': 'ALTER TABLE products ADD COLUMN barcode TEXT',
+      });
     }
   }
 
@@ -391,6 +398,7 @@ class DatabaseHelper {
     required double costPrice,
     required double sellingPrice,
     required int stock,
+    String? barcode,
     Uint8List? photoBytes,
   }) async {
     final db = await instance.database;
@@ -401,6 +409,7 @@ class DatabaseHelper {
         'cost_price': costPrice,
         'selling_price': sellingPrice,
         'stock': stock,
+        'barcode': _trim(barcode).isEmpty ? null : _trim(barcode),
         'photo_bytes': photoBytes,
       },
       where: 'id = ?',
@@ -415,6 +424,22 @@ class DatabaseHelper {
       'products',
       where: 'name = ? AND selling_price = ?',
       whereArgs: [name, price],
+      limit: 1,
+    );
+
+    if (result.isEmpty) return null;
+    return result.first;
+  }
+
+  Future<Map<String, dynamic>?> findProductByBarcode(String barcode) async {
+    final cleanBarcode = _trim(barcode);
+    if (cleanBarcode.isEmpty) return null;
+
+    final db = await instance.database;
+    final result = await db.query(
+      'products',
+      where: 'barcode = ?',
+      whereArgs: [cleanBarcode],
       limit: 1,
     );
 
