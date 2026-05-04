@@ -35,7 +35,20 @@ class _CloudDataManagementScreenState
   @override
   void initState() {
     super.initState();
+    _syncService.addListener(_handleSyncChanged);
     _loadBackupInfo();
+  }
+
+  @override
+  void dispose() {
+    _syncService.removeListener(_handleSyncChanged);
+    super.dispose();
+  }
+
+  void _handleSyncChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _loadBackupInfo() async {
@@ -84,56 +97,72 @@ class _CloudDataManagementScreenState
 
   Future<bool> _confirmDelete() async {
     final email = _syncService.email ?? '';
-    final controller = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text("Delete cloud backup?"),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                "This will permanently delete the Google Drive backup saved for $email.",
+        var typedEmail = '';
+        var showError = false;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text("Delete cloud backup?"),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "This will permanently delete the Google Drive backup saved for $email.",
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    keyboardType: TextInputType.emailAddress,
+                    autofocus: true,
+                    onChanged: (value) {
+                      typedEmail = value;
+                      if (showError) {
+                        setDialogState(() {
+                          showError = false;
+                        });
+                      }
+                    },
+                    decoration: InputDecoration(
+                      labelText: "Confirm Google account email",
+                      errorText: showError
+                          ? "Email does not match the signed-in account"
+                          : null,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: controller,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
-                  labelText: "Confirm Google account email",
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text("Cancel"),
                 ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(null),
-              child: const Text("Cancel"),
-            ),
-            FilledButton(
-              onPressed: () {
-                final typedEmail = controller.text.trim().toLowerCase();
-                Navigator.of(
-                  dialogContext,
-                ).pop(typedEmail == email.trim().toLowerCase());
-              },
-              child: const Text("Delete"),
-            ),
-          ],
+                FilledButton(
+                  onPressed: () {
+                    final matches =
+                        typedEmail.trim().toLowerCase() ==
+                        email.trim().toLowerCase();
+                    if (!matches) {
+                      setDialogState(() {
+                        showError = true;
+                      });
+                      return;
+                    }
+
+                    Navigator.of(dialogContext).pop(true);
+                  },
+                  child: const Text("Delete"),
+                ),
+              ],
+            );
+          },
         );
       },
     );
-    controller.dispose();
-
-    if (confirmed != true) {
-      if (confirmed == false) {
-        _showMessage("Enter the signed-in Google email to delete the backup.");
-      }
-      return false;
-    }
-    return true;
+    return confirmed == true;
   }
 
   Future<void> _deleteCloudBackup() async {
@@ -148,6 +177,17 @@ class _CloudDataManagementScreenState
       });
       _showMessage("Cloud backup deleted");
       Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted) return;
+      _showMessage(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Future<void> _saveCloudBackupLocally() async {
+    try {
+      final file = await _syncService.saveLatestCloudBackupToDownloads();
+      if (!mounted) return;
+      _showMessage("Cloud backup saved to ${file.path}");
     } catch (error) {
       if (!mounted) return;
       _showMessage(error.toString().replaceFirst('Exception: ', ''));
@@ -184,6 +224,17 @@ class _CloudDataManagementScreenState
                     ),
                     subtitle: Text(
                       "Last cloud backup: ${_formatCloudDate(_backupInfo?.modifiedTime)}\n${_formatBackupSize(_backupInfo?.sizeBytes)}",
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: busy || _backupInfo == null
+                          ? null
+                          : _saveCloudBackupLocally,
+                      icon: const Icon(Icons.download_outlined),
+                      label: const Text("Save Cloud Backup Locally"),
                     ),
                   ),
                   const SizedBox(height: 12),

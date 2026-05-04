@@ -182,6 +182,39 @@ class AccountSyncService extends ChangeNotifier {
     }
   }
 
+  Future<File> saveLatestCloudBackupToDownloads() async {
+    final api = await _driveApi();
+    _setBusy(true);
+    try {
+      final latest = await _latestBackupFile(api);
+      if (latest?.id == null) {
+        throw Exception(
+          'No cloud backup found for ${email ?? 'this account'}.',
+        );
+      }
+
+      final media =
+          await api.files.get(
+                latest!.id!,
+                downloadOptions: drive.DownloadOptions.fullMedia,
+              )
+              as drive.Media;
+      final directory = await _downloadsDirectory();
+      final timestamp = DateTime.now()
+          .toIso8601String()
+          .replaceAll(RegExp(r'[^0-9]'), '')
+          .substring(0, 14);
+      final file = File(
+        '${directory.path}/sale_buddy_cloud_backup_$timestamp.db',
+      );
+      final sink = file.openWrite();
+      await media.stream.pipe(sink);
+      return file;
+    } finally {
+      _setBusy(false);
+    }
+  }
+
   Future<void> deleteLatestCloudBackup() async {
     final api = await _driveApi();
     _setBusy(true);
@@ -197,6 +230,19 @@ class AccountSyncService extends ChangeNotifier {
     } finally {
       _setBusy(false);
     }
+  }
+
+  Future<Directory> _downloadsDirectory() async {
+    Directory? directory = await getDownloadsDirectory();
+    if (directory == null && Platform.isAndroid) {
+      directory = Directory('/storage/emulated/0/Download');
+    }
+    directory ??= await getApplicationDocumentsDirectory();
+
+    if (!await directory.exists()) {
+      await directory.create(recursive: true);
+    }
+    return directory;
   }
 
   Future<drive.DriveApi> _driveApi() async {
