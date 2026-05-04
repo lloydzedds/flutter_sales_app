@@ -20,26 +20,23 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final _controller = AppSettingsController.instance;
   final _syncService = AccountSyncService.instance;
-  final _googleClientIdController = TextEditingController();
 
   Map<String, String> _storeDetails = {};
   bool _isBusy = false;
   CloudBackupInfo? _cloudBackupInfo;
-  bool _isSavingGoogleConfig = false;
 
   @override
   void initState() {
     super.initState();
     _syncService.addListener(_handleSyncChanged);
     _loadStoreDetails();
-    _loadGoogleClientId();
+    _loadGoogleSignInConfiguration();
     _loadCloudBackupInfo();
   }
 
   @override
   void dispose() {
     _syncService.removeListener(_handleSyncChanged);
-    _googleClientIdController.dispose();
     super.dispose();
   }
 
@@ -57,10 +54,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
   }
 
-  Future<void> _loadGoogleClientId() async {
-    final clientId = await _syncService.loadSavedWebClientId();
-    if (!mounted) return;
-    _googleClientIdController.text = clientId;
+  Future<void> _loadGoogleSignInConfiguration() async {
+    await _syncService.loadConfiguration();
   }
 
   void _showMessage(String message) {
@@ -94,31 +89,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       setState(() {
         _cloudBackupInfo = null;
       });
-    }
-  }
-
-  Future<void> _saveGoogleClientId() async {
-    final clientId = _googleClientIdController.text.trim();
-    setState(() {
-      _isSavingGoogleConfig = true;
-    });
-
-    try {
-      await _syncService.saveWebClientId(clientId);
-      if (!mounted) return;
-      _showMessage(
-        clientId.isEmpty
-            ? "Google Web Client ID cleared"
-            : _syncService.requiresRestartForClientIdChange
-            ? "Google Web Client ID saved. Restart the app before trying Google sign-in again."
-            : "Google Web Client ID saved. You can sign in now.",
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSavingGoogleConfig = false;
-        });
-      }
     }
   }
 
@@ -363,37 +333,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       subtitle: "Save and restore data with Google Drive app data",
       child: Column(
         children: [
-          TextField(
-            controller: _googleClientIdController,
-            enabled: !_isSavingGoogleConfig && !busy,
-            keyboardType: TextInputType.emailAddress,
-            textInputAction: TextInputAction.done,
-            decoration: const InputDecoration(
-              labelText: "Google Web Client ID",
-              helperText:
-                  "Paste the Web OAuth client ID ending with .apps.googleusercontent.com",
-            ),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _isSavingGoogleConfig || busy
-                  ? null
-                  : _saveGoogleClientId,
-              icon: _isSavingGoogleConfig
-                  ? const SizedBox(
-                      height: 18,
-                      width: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.key_outlined),
-              label: Text(
-                _isSavingGoogleConfig ? "Saving..." : "Save Google Client ID",
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: CircleAvatar(
@@ -421,21 +360,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Text(
-                "Save your Google Web Client ID here first, then tap Sign in with Google.",
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            )
-          else if (_syncService.requiresRestartForClientIdChange && !signedIn)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.tertiaryContainer,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Text(
-                "Restart the app to apply the updated Google client ID before signing in.",
+                "Google sign-in is not configured for this build.",
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),

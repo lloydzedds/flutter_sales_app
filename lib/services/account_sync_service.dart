@@ -16,7 +16,6 @@ class AccountSyncService extends ChangeNotifier {
 
   static const _backupFileName = 'sale_buddy_sales.db';
   static const _scopes = <String>[drive.DriveApi.driveAppdataScope];
-  static const _configuredClientIdKey = 'google_web_client_id';
   static const _bundledWebClientId = String.fromEnvironment(
     'GOOGLE_WEB_CLIENT_ID',
   );
@@ -26,7 +25,6 @@ class AccountSyncService extends ChangeNotifier {
   bool _initialized = false;
   bool _isBusy = false;
   String _configuredWebClientId = '';
-  bool _requiresRestartForClientIdChange = false;
 
   GoogleSignInAccount? get account => _account;
   bool get isSignedIn => _account != null;
@@ -36,8 +34,6 @@ class AccountSyncService extends ChangeNotifier {
   String? get photoUrl => _account?.photoUrl;
   String get configuredWebClientId => _configuredWebClientId;
   bool get hasConfiguredWebClientId => _configuredWebClientId.isNotEmpty;
-  bool get requiresRestartForClientIdChange =>
-      _requiresRestartForClientIdChange;
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -86,12 +82,7 @@ class AccountSyncService extends ChangeNotifier {
     _configuredWebClientId = await _loadConfiguredWebClientId();
     if (_configuredWebClientId.isEmpty) {
       throw Exception(
-        'Google sign-in is not configured yet. Add your Google Web Client ID in Settings first.',
-      );
-    }
-    if (_requiresRestartForClientIdChange) {
-      throw Exception(
-        'Restart the app to use the updated Google Web Client ID, then try signing in again.',
+        'Google sign-in is not configured for this build. Add GOOGLE_WEB_CLIENT_ID when running or building the app.',
       );
     }
 
@@ -246,33 +237,14 @@ class AccountSyncService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<String> loadSavedWebClientId() async {
+  Future<void> loadConfiguration() async {
     final value = await _loadConfiguredWebClientId();
     _configuredWebClientId = value;
-    return value;
-  }
-
-  Future<void> saveWebClientId(String value) async {
-    final cleanValue = value.trim();
-    _requiresRestartForClientIdChange =
-        _initialized && cleanValue != _configuredWebClientId;
-    await DatabaseHelper.instance.saveAppSetting(
-      _configuredClientIdKey,
-      cleanValue,
-    );
-    _configuredWebClientId = cleanValue;
     notifyListeners();
   }
 
   Future<String> _loadConfiguredWebClientId() async {
-    if (_bundledWebClientId.isNotEmpty) {
-      return _bundledWebClientId.trim();
-    }
-
-    return (await DatabaseHelper.instance.getAppSetting(
-          _configuredClientIdKey,
-        ))?.trim() ??
-        '';
+    return _bundledWebClientId.trim();
   }
 
   @override

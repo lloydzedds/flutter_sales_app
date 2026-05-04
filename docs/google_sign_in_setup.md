@@ -14,17 +14,22 @@ save and restore the local SQLite database for the signed-in Google account.
      `CF:BD:50:02:FE:5B:33:30:4D:A1:D7:05:6D:88:33:A4:2E:91:A5:C0`
 5. Create a Web OAuth client and copy its client ID.
 
-## Add the Web client ID to the app
+## Add the Web client ID to the app build
 
 ```powershell
-flutter run -d ZD222J7GJC
+flutter run -d ZD222J7GJC --dart-define=GOOGLE_WEB_CLIENT_ID=YOUR_WEB_CLIENT_ID
 ```
 
-Then open Settings in the app and paste your Web OAuth client ID into
-`Google Web Client ID`, save it, and use `Sign in with Google`.
+Replace `YOUR_WEB_CLIENT_ID` with the Web OAuth client ID ending in
+`.apps.googleusercontent.com`.
 
-You can still use `--dart-define=GOOGLE_WEB_CLIENT_ID=...` if you want to
-bundle it at launch time, but the app no longer requires that for every run.
+For release builds, include the same define:
+
+```powershell
+flutter build apk --release --dart-define=GOOGLE_WEB_CLIENT_ID=YOUR_WEB_CLIENT_ID
+```
+
+Then open Settings in the app and use `Sign in with Google`.
 
 Without the Google Cloud OAuth clients, Android builds still compile, but
 interactive Google sign-in can still fail with a client configuration error.
