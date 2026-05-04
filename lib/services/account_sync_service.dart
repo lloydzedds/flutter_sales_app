@@ -16,12 +16,17 @@ class AccountSyncService extends ChangeNotifier {
 
   static const _backupFileName = 'sale_buddy_sales.db';
   static const _scopes = <String>[drive.DriveApi.driveAppdataScope];
-  static const _webClientId = String.fromEnvironment('GOOGLE_WEB_CLIENT_ID');
+  static const _configuredClientIdKey = 'google_web_client_id';
+  static const _bundledWebClientId = String.fromEnvironment(
+    'GOOGLE_WEB_CLIENT_ID',
+  );
 
   GoogleSignInAccount? _account;
   StreamSubscription<GoogleSignInAuthenticationEvent>? _authSubscription;
   bool _initialized = false;
   bool _isBusy = false;
+  String _configuredWebClientId = '';
+  bool _requiresRestartForClientIdChange = false;
 
   GoogleSignInAccount? get account => _account;
   bool get isSignedIn => _account != null;
@@ -29,14 +34,21 @@ class AccountSyncService extends ChangeNotifier {
   String? get email => _account?.email;
   String? get displayName => _account?.displayName;
   String? get photoUrl => _account?.photoUrl;
+  String get configuredWebClientId => _configuredWebClientId;
+  bool get hasConfiguredWebClientId => _configuredWebClientId.isNotEmpty;
+  bool get requiresRestartForClientIdChange =>
+      _requiresRestartForClientIdChange;
 
   Future<void> initialize() async {
     if (_initialized) return;
-    _initialized = true;
+    _configuredWebClientId = await _loadConfiguredWebClientId();
 
     await GoogleSignIn.instance.initialize(
-      serverClientId: _webClientId.isEmpty ? null : _webClientId,
+      serverClientId: _configuredWebClientId.isEmpty
+          ? null
+          : _configuredWebClientId,
     );
+    _initialized = true;
 
     _authSubscription = GoogleSignIn.instance.authenticationEvents.listen((
       event,
@@ -50,7 +62,7 @@ class AccountSyncService extends ChangeNotifier {
       notifyListeners();
     }, onError: (_) {});
 
-    if (_webClientId.isEmpty) return;
+    if (_configuredWebClientId.isEmpty) return;
     final lightweight = GoogleSignIn.instance
         .attemptLightweightAuthentication();
     if (lightweight != null) {
@@ -71,13 +83,19 @@ class AccountSyncService extends ChangeNotifier {
   }
 
   Future<void> signIn() async {
-    await initialize();
-    if (_webClientId.isEmpty) {
+    _configuredWebClientId = await _loadConfiguredWebClientId();
+    if (_configuredWebClientId.isEmpty) {
       throw Exception(
-        'Google sign-in is not configured yet. Add GOOGLE_WEB_CLIENT_ID when running the app.',
+        'Google sign-in is not configured yet. Add your Google Web Client ID in Settings first.',
+      );
+    }
+    if (_requiresRestartForClientIdChange) {
+      throw Exception(
+        'Restart the app to use the updated Google Web Client ID, then try signing in again.',
       );
     }
 
+    await initialize();
     if (!GoogleSignIn.instance.supportsAuthenticate()) {
       throw Exception('Google sign-in is not supported on this platform.');
     }
@@ -226,6 +244,35 @@ class AccountSyncService extends ChangeNotifier {
     if (_isBusy == value) return;
     _isBusy = value;
     notifyListeners();
+  }
+
+  Future<String> loadSavedWebClientId() async {
+    final value = await _loadConfiguredWebClientId();
+    _configuredWebClientId = value;
+    return value;
+  }
+
+  Future<void> saveWebClientId(String value) async {
+    final cleanValue = value.trim();
+    _requiresRestartForClientIdChange =
+        _initialized && cleanValue != _configuredWebClientId;
+    await DatabaseHelper.instance.saveAppSetting(
+      _configuredClientIdKey,
+      cleanValue,
+    );
+    _configuredWebClientId = cleanValue;
+    notifyListeners();
+  }
+
+  Future<String> _loadConfiguredWebClientId() async {
+    if (_bundledWebClientId.isNotEmpty) {
+      return _bundledWebClientId.trim();
+    }
+
+    return (await DatabaseHelper.instance.getAppSetting(
+          _configuredClientIdKey,
+        ))?.trim() ??
+        '';
   }
 
   @override

@@ -417,6 +417,16 @@ class DatabaseHelper {
     );
   }
 
+  Future<void> updateProductBarcode(int productId, String? barcode) async {
+    final db = await instance.database;
+    await db.update(
+      'products',
+      {'barcode': _trim(barcode).isEmpty ? null : _trim(barcode)},
+      where: 'id = ?',
+      whereArgs: [productId],
+    );
+  }
+
   Future<Map<String, dynamic>?> findProduct(String name, double price) async {
     final db = await instance.database;
 

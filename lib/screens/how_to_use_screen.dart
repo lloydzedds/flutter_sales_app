@@ -83,7 +83,13 @@ class HowToUseScreen extends StatelessWidget {
             icon: Icons.photo_camera_outlined,
             title: "Product Photos and Inventory",
             description:
-                "You can attach a product photo from camera or gallery. Inventory items on the home screen can be long pressed for product edit and stock actions, so you can quickly fix names, prices, or stock without opening multiple screens.",
+                "You can attach a product photo from camera or gallery. Inventory items on the home screen can be long pressed for product edit, stock actions, and label printing, so you can quickly fix names, prices, stock, or print tags without opening multiple screens.",
+          ),
+          _stepCard(
+            icon: Icons.local_printshop_outlined,
+            title: "Print Product Labels",
+            description:
+                "Long press any product in Inventory and choose Print Label to create barcode or QR label PDFs. If a product has no barcode yet, the app can generate an internal one for you before printing. You can then share the PDF to your printer app or save it locally for later printing.",
           ),
           _stepCard(
             icon: Icons.point_of_sale_rounded,

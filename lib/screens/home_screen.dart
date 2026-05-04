@@ -10,6 +10,7 @@ import 'add_product_screen.dart';
 import 'add_sale_screen.dart';
 import 'customers_screen.dart';
 import 'how_to_use_screen.dart';
+import 'product_label_screen.dart';
 import 'pos_screen.dart';
 import 'settings_screen.dart';
 import 'sales_history_screen.dart';
@@ -576,6 +577,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 onTap: () => Navigator.of(sheetContext).pop('edit'),
               ),
               ListTile(
+                leading: const Icon(Icons.local_printshop_outlined),
+                title: const Text("Print Label"),
+                onTap: () => Navigator.of(sheetContext).pop('label'),
+              ),
+              ListTile(
                 leading: const Icon(Icons.add_circle_outline),
                 title: const Text("Add Stock"),
                 onTap: () => Navigator.of(sheetContext).pop('add'),
@@ -601,6 +607,9 @@ class _HomeScreenState extends State<HomeScreen> {
     switch (action) {
       case 'edit':
         await _openProductEditor(product);
+        return;
+      case 'label':
+        await _pushAndRefresh(ProductLabelScreen(product: product));
         return;
       case 'add':
         await _openStockAdjustment(product: product, mode: StockAdjustMode.add);
