@@ -170,9 +170,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   bool get _hasSearchQuery => _searchController.text.trim().isNotEmpty;
 
   bool get _hasFinderFilters =>
-      _hasSearchQuery ||
-      _walkInOnly ||
-      _searchScope != _HistorySearchScope.all;
+      _hasSearchQuery || _walkInOnly || _searchScope != _HistorySearchScope.all;
 
   List<Map<String, dynamic>> get orders => _filteredOrders();
 
@@ -318,15 +316,16 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
           (revenueByDay[dayKey] ?? 0) + _asDouble(order['total']);
     }
 
-    final series = revenueByDay.entries
-        .map<Map<String, dynamic>>((entry) => <String, dynamic>{
-              'day': entry.key,
-              'revenue': entry.value,
-            })
-        .toList()
-      ..sort(
-        (a, b) => (a['day'] as String).compareTo(b['day'] as String),
-      );
+    final series =
+        revenueByDay.entries
+            .map<Map<String, dynamic>>(
+              (entry) => <String, dynamic>{
+                'day': entry.key,
+                'revenue': entry.value,
+              },
+            )
+            .toList()
+          ..sort((a, b) => (a['day'] as String).compareTo(b['day'] as String));
 
     const maxPoints = 14;
     if (series.length <= maxPoints) {
@@ -345,7 +344,9 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     return total / chartPoints.length;
   }
 
-  Map<String, dynamic>? _bestRevenueDay(List<Map<String, dynamic>> chartPoints) {
+  Map<String, dynamic>? _bestRevenueDay(
+    List<Map<String, dynamic>> chartPoints,
+  ) {
     if (chartPoints.isEmpty) return null;
 
     var best = chartPoints.first;
@@ -1291,13 +1292,27 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     bool filled = false,
   }) {
     final child = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [Icon(icon, size: 18), const SizedBox(width: 8), Text(label)],
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(icon, size: 18),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ],
     );
 
-    return filled
-        ? ElevatedButton(onPressed: onPressed, child: child)
-        : OutlinedButton(onPressed: onPressed, child: child);
+    return SizedBox(
+      height: 56,
+      child: filled
+          ? ElevatedButton(onPressed: onPressed, child: child)
+          : OutlinedButton(onPressed: onPressed, child: child),
+    );
   }
 
   Widget _buildMetricCard({
@@ -1402,55 +1417,65 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   }
 
   Widget _buildToolsPanel() {
+    final actions = <Widget>[
+      _buildToolButton(
+        onPressed: pickDate,
+        icon: Icons.calendar_month_outlined,
+        label: selectedDate == null ? "Filter by Date" : "Change Date",
+        filled: true,
+      ),
+      if (selectedDate != null)
+        _buildToolButton(
+          onPressed: clearDateFilter,
+          icon: Icons.filter_alt_off_outlined,
+          label: "Clear Filter",
+        ),
+      _buildToolButton(
+        onPressed: _openBillSearch,
+        icon: Icons.manage_search_rounded,
+        label: "Search Bills",
+      ),
+      _buildToolButton(
+        onPressed: exportToCSV,
+        icon: Icons.ios_share_outlined,
+        label: "Export CSV",
+      ),
+      _buildToolButton(
+        onPressed: exportToPDF,
+        icon: Icons.picture_as_pdf_outlined,
+        label: "Export PDF",
+      ),
+      _buildToolButton(
+        onPressed: backupDatabase,
+        icon: Icons.backup_outlined,
+        label: "Backup",
+      ),
+      _buildToolButton(
+        onPressed: restoreDatabase,
+        icon: Icons.restore_rounded,
+        label: "Restore",
+      ),
+    ];
+
     return _buildPanel(
       title: "History Tools",
-      subtitle:
-          "Filter the view, share exports, save them locally in Android/media/<app>/sale, or create and restore backups",
+      subtitle: "Filter, search, export, back up, or restore sales records.",
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              _buildToolButton(
-                onPressed: pickDate,
-                icon: Icons.calendar_month_outlined,
-                label: "Filter by Date",
-                filled: true,
-              ),
-              if (selectedDate != null)
-                _buildToolButton(
-                  onPressed: clearDateFilter,
-                  icon: Icons.filter_alt_off_outlined,
-                  label: "Clear Filter",
-                ),
-              _buildToolButton(
-                onPressed: _openBillSearch,
-                icon: Icons.manage_search_rounded,
-                label: "Search Bills",
-              ),
-              _buildToolButton(
-                onPressed: exportToCSV,
-                icon: Icons.ios_share_outlined,
-                label: "Export CSV",
-              ),
-              _buildToolButton(
-                onPressed: exportToPDF,
-                icon: Icons.picture_as_pdf_outlined,
-                label: "Export PDF",
-              ),
-              _buildToolButton(
-                onPressed: backupDatabase,
-                icon: Icons.backup_outlined,
-                label: "Backup",
-              ),
-              _buildToolButton(
-                onPressed: restoreDatabase,
-                icon: Icons.restore_rounded,
-                label: "Restore",
-              ),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final crossAxisCount = constraints.maxWidth >= 520 ? 3 : 2;
+              return GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: crossAxisCount,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: 2.7,
+                children: actions,
+              );
+            },
           ),
           if (_isLoading || _isBusy) ...[
             const SizedBox(height: 14),
@@ -1611,7 +1636,9 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
           minY: 0,
           maxY: effectiveMax,
           minX: 0,
-          maxX: chartPoints.length == 1 ? 1 : (chartPoints.length - 1).toDouble(),
+          maxX: chartPoints.length == 1
+              ? 1
+              : (chartPoints.length - 1).toDouble(),
           gridData: FlGridData(
             show: true,
             drawVerticalLine: false,
@@ -1635,9 +1662,9 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                         alignment: Alignment.topRight,
                         padding: const EdgeInsets.only(right: 6, bottom: 2),
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: colorScheme.secondary,
-                              fontWeight: FontWeight.w700,
-                            ),
+                          color: colorScheme.secondary,
+                          fontWeight: FontWeight.w700,
+                        ),
                         labelResolver: (_) =>
                             "Avg ${_formatCompactAmount(averageRevenue)}",
                       ),
@@ -1802,10 +1829,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                _OrderChip(
-                  label: "Days",
-                  value: "${chartPoints.length}",
-                ),
+                _OrderChip(label: "Days", value: "${chartPoints.length}"),
                 _OrderChip(
                   label: "Avg / Day",
                   value: _formatCurrency(averageRevenue),

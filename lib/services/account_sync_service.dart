@@ -59,25 +59,6 @@ class AccountSyncService extends ChangeNotifier {
       }
       notifyListeners();
     }, onError: (_) {});
-
-    if (_configuredWebClientId.isEmpty) return;
-    final lightweight = GoogleSignIn.instance
-        .attemptLightweightAuthentication();
-    if (lightweight != null) {
-      unawaited(_restoreLightweightAccount(lightweight));
-    }
-  }
-
-  Future<void> _restoreLightweightAccount(
-    Future<GoogleSignInAccount?> lightweight,
-  ) async {
-    try {
-      _account = await lightweight;
-      notifyListeners();
-    } catch (_) {
-      _account = null;
-      notifyListeners();
-    }
   }
 
   Future<void> signIn() async {
@@ -95,8 +76,7 @@ class AccountSyncService extends ChangeNotifier {
 
     _setBusy(true);
     try {
-      _account = await GoogleSignIn.instance.authenticate(scopeHint: _scopes);
-      await _account!.authorizationClient.authorizeScopes(_scopes);
+      _account = await GoogleSignIn.instance.authenticate();
       notifyListeners();
     } finally {
       _setBusy(false);
