@@ -16,6 +16,11 @@ save and restore the local SQLite database for the signed-in Google account.
 
 ## Add the Web client ID to the app build
 
+For local testing, the app currently includes a development Web client ID in
+`AccountSyncService`.
+
+To override it at run time, pass your Web client ID with `--dart-define`:
+
 ```powershell
 flutter run -d ZD222J7GJC --dart-define=GOOGLE_WEB_CLIENT_ID=YOUR_WEB_CLIENT_ID
 ```

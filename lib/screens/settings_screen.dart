@@ -17,6 +17,200 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
+class _CloudDataManagementScreen extends StatefulWidget {
+  const _CloudDataManagementScreen();
+
+  @override
+  State<_CloudDataManagementScreen> createState() =>
+      _CloudDataManagementScreenState();
+}
+
+class _CloudDataManagementScreenState
+    extends State<_CloudDataManagementScreen> {
+  final _syncService = AccountSyncService.instance;
+
+  CloudBackupInfo? _backupInfo;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBackupInfo();
+  }
+
+  Future<void> _loadBackupInfo() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final info = await _syncService.getLatestBackupInfo();
+      if (!mounted) return;
+      setState(() {
+        _backupInfo = info;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _backupInfo = null;
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  String _formatCloudDate(DateTime? value) {
+    if (value == null) return 'No cloud backup found';
+    return DateFormat('MMM d, yyyy h:mm a').format(value.toLocal());
+  }
+
+  String _formatBackupSize(int? bytes) {
+    if (bytes == null) return 'Size unavailable';
+    if (bytes < 1024) return '$bytes B';
+    final kb = bytes / 1024;
+    if (kb < 1024) return '${kb.toStringAsFixed(1)} KB';
+    return '${(kb / 1024).toStringAsFixed(1)} MB';
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<bool> _confirmDelete() async {
+    final email = _syncService.email ?? '';
+    final controller = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text("Delete cloud backup?"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "This will permanently delete the Google Drive backup saved for $email.",
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(
+                  labelText: "Confirm Google account email",
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(null),
+              child: const Text("Cancel"),
+            ),
+            FilledButton(
+              onPressed: () {
+                final typedEmail = controller.text.trim().toLowerCase();
+                Navigator.of(
+                  dialogContext,
+                ).pop(typedEmail == email.trim().toLowerCase());
+              },
+              child: const Text("Delete"),
+            ),
+          ],
+        );
+      },
+    );
+    controller.dispose();
+
+    if (confirmed != true) {
+      if (confirmed == false) {
+        _showMessage("Enter the signed-in Google email to delete the backup.");
+      }
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _deleteCloudBackup() async {
+    final confirmed = await _confirmDelete();
+    if (!confirmed) return;
+
+    try {
+      await _syncService.deleteLatestCloudBackup();
+      if (!mounted) return;
+      setState(() {
+        _backupInfo = null;
+      });
+      _showMessage("Cloud backup deleted");
+      Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted) return;
+      _showMessage(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final busy = _syncService.isBusy || _isLoading;
+    final email = _syncService.email ?? 'No Google account';
+
+    return Scaffold(
+      appBar: AppBar(title: const Text("Manage My Cloud Data")),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.primaryContainer,
+                      child: const Icon(Icons.cloud_done_outlined),
+                    ),
+                    title: Text(
+                      email,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: Text(
+                      "Last cloud backup: ${_formatCloudDate(_backupInfo?.modifiedTime)}\n${_formatBackupSize(_backupInfo?.sizeBytes)}",
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: busy || _backupInfo == null
+                          ? null
+                          : _deleteCloudBackup,
+                      icon: const Icon(Icons.delete_forever_outlined),
+                      label: const Text("Delete Cloud Backup"),
+                    ),
+                  ),
+                  if (busy) ...[
+                    const SizedBox(height: 14),
+                    const LinearProgressIndicator(),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SettingsScreenState extends State<SettingsScreen> {
   final _controller = AppSettingsController.instance;
   final _syncService = AccountSyncService.instance;
@@ -163,6 +357,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (!mounted) return;
       _showMessage(error.toString().replaceFirst('Exception: ', ''));
     }
+  }
+
+  Future<void> _openCloudDataManager() async {
+    final deleted = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const _CloudDataManagementScreen()),
+    );
+
+    if (!mounted || deleted != true) return;
+    await _loadCloudBackupInfo();
   }
 
   Future<String?> _pickBackupAction() {
@@ -390,6 +593,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onPressed: busy ? null : _restoreFromCloud,
                 icon: const Icon(Icons.cloud_download_outlined),
                 label: const Text("Restore from Google"),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: busy ? null : _openCloudDataManager,
+                icon: const Icon(Icons.manage_accounts_outlined),
+                label: const Text("Manage My Cloud Data"),
               ),
             ),
             const SizedBox(height: 12),

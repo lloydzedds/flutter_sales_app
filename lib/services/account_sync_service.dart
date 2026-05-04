@@ -16,6 +16,8 @@ class AccountSyncService extends ChangeNotifier {
 
   static const _backupFileName = 'sale_buddy_sales.db';
   static const _scopes = <String>[drive.DriveApi.driveAppdataScope];
+  static const _developmentWebClientId =
+      '244833529337-7u9dh7p43iva3j5fdhad2nus2lbm9u0u.apps.googleusercontent.com';
   static const _bundledWebClientId = String.fromEnvironment(
     'GOOGLE_WEB_CLIENT_ID',
   );
@@ -200,6 +202,23 @@ class AccountSyncService extends ChangeNotifier {
     }
   }
 
+  Future<void> deleteLatestCloudBackup() async {
+    final api = await _driveApi();
+    _setBusy(true);
+    try {
+      final latest = await _latestBackupFile(api);
+      if (latest?.id == null) {
+        throw Exception(
+          'No cloud backup found for ${email ?? 'this account'}.',
+        );
+      }
+
+      await api.files.delete(latest!.id!);
+    } finally {
+      _setBusy(false);
+    }
+  }
+
   Future<drive.DriveApi> _driveApi() async {
     await initialize();
     final user = _account;
@@ -244,7 +263,9 @@ class AccountSyncService extends ChangeNotifier {
   }
 
   Future<String> _loadConfiguredWebClientId() async {
-    return _bundledWebClientId.trim();
+    final bundledValue = _bundledWebClientId.trim();
+    if (bundledValue.isNotEmpty) return bundledValue;
+    return _developmentWebClientId;
   }
 
   @override

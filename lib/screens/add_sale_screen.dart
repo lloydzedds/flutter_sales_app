@@ -1349,26 +1349,30 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              DropdownMenu<int>(
-                key: ValueKey(
-                  '${selectedProductId ?? 'none'}|${products.length}|${_editingItemIndex ?? 'new'}',
-                ),
-                controller: productSearchController,
-                focusNode: productSearchFocusNode,
-                initialSelection: selectedProductId,
-                requestFocusOnTap: true,
-                enableFilter: true,
-                enableSearch: true,
-                menuHeight: 280,
-                width: double.infinity,
-                leadingIcon: const Icon(Icons.search_rounded),
-                label: const Text("Select Product"),
-                hintText: "Tap to search or browse products",
-                helperText:
-                    "Type a product name or barcode to filter the list.",
-                filterCallback: _filterProductEntries,
-                dropdownMenuEntries: _productMenuEntries,
-                onSelected: _selectProduct,
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  return DropdownMenu<int>(
+                    key: ValueKey(
+                      '${selectedProductId ?? 'none'}|${products.length}|${_editingItemIndex ?? 'new'}',
+                    ),
+                    controller: productSearchController,
+                    focusNode: productSearchFocusNode,
+                    initialSelection: selectedProductId,
+                    requestFocusOnTap: true,
+                    enableFilter: true,
+                    enableSearch: true,
+                    menuHeight: 280,
+                    width: constraints.maxWidth,
+                    leadingIcon: const Icon(Icons.search_rounded),
+                    label: const Text("Select Product"),
+                    hintText: "Tap to search or browse products",
+                    helperText:
+                        "Type a product name or barcode to filter the list.",
+                    filterCallback: _filterProductEntries,
+                    dropdownMenuEntries: _productMenuEntries,
+                    onSelected: _selectProduct,
+                  );
+                },
               ),
               if (selectedProduct != null) ...[
                 const SizedBox(height: 16),
