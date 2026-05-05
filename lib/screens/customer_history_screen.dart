@@ -254,11 +254,15 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
                           item['product_name']?.toString() ??
                               item['name']?.toString() ??
                               'Product',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                         const SizedBox(height: 6),
                         Text(
                           "Qty ${_asInt(item['net_units'])} • SP ${_formatCurrency(item['selling_price'])} • Discount ${_formatCurrency(item['discount'])} • Total ${_formatCurrency(item['total'])}",
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
                         ),
                         if (_asDouble(item['returned_total']) > 0) ...[
                           const SizedBox(height: 4),
@@ -294,15 +298,21 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
                         children: [
                           Text(
                             entry['product_name']?.toString() ?? 'Product',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
                           const SizedBox(height: 6),
                           Text(
                             "Qty ${_asInt(entry['units'])} • Refund ${_formatCurrency(entry['refund_amount'])}",
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 4),
                           Text(
                             "${restocked ? 'Restocked' : 'Not restocked'} • ${entry['date']?.toString() ?? '--'}",
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ],
@@ -395,17 +405,25 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
                       order['bill_number']?.toString().trim().isNotEmpty == true
                           ? order['bill_number'].toString().trim()
                           : 'Sale #${order['id']}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 16,
                       ),
                     ),
                   ),
-                  Text(
-                    _formatCurrency(order['total']),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 16,
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: Text(
+                      _formatCurrency(order['total']),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
                     ),
                   ),
                 ],
@@ -416,7 +434,11 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 10),
-              Text(productPreview),
+              Text(
+                productPreview,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
               const SizedBox(height: 10),
               Wrap(
                 spacing: 8,
@@ -539,6 +561,8 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
                       _customer['name']?.toString().trim().isNotEmpty == true
                           ? _customer['name'].toString().trim()
                           : 'Unnamed Customer',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
@@ -549,6 +573,8 @@ class _CustomerHistoryScreenState extends State<CustomerHistoryScreen> {
                       _customer['phone']?.toString().trim().isNotEmpty == true
                           ? _customer['phone'].toString().trim()
                           : 'Phone not saved',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 14),
                     Wrap(
@@ -625,6 +651,9 @@ class _CustomerOrderChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width - 64,
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.primary.withAlpha(10),
@@ -632,6 +661,8 @@ class _CustomerOrderChip extends StatelessWidget {
       ),
       child: Text(
         "$label: $value",
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
           fontWeight: FontWeight.w600,
           color: valueColor,

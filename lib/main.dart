@@ -33,6 +33,18 @@ class MyApp extends StatelessWidget {
           themeMode: controller.themeMode,
           theme: _buildLightTheme(),
           darkTheme: _buildDarkTheme(),
+          builder: (context, child) {
+            final mediaQuery = MediaQuery.of(context);
+            return MediaQuery(
+              data: mediaQuery.copyWith(
+                textScaler: mediaQuery.textScaler.clamp(
+                  minScaleFactor: 0.9,
+                  maxScaleFactor: 1.14,
+                ),
+              ),
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
           home: ClockGuard(child: home),
         );
       },
@@ -78,6 +90,12 @@ class MyApp extends StatelessWidget {
         backgroundColor: scaffoldBackground,
         foregroundColor: text,
         elevation: 0,
+      ),
+      pageTransitionsTheme: _buildPageTransitionsTheme(),
+      iconTheme: const IconThemeData(color: tertiary),
+      listTileTheme: const ListTileThemeData(
+        iconColor: tertiary,
+        selectedColor: primary,
       ),
       cardTheme: CardThemeData(
         color: surface,
@@ -127,6 +145,13 @@ class MyApp extends StatelessWidget {
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
+        indicatorColor: primary.withAlpha(28),
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return const IconThemeData(color: primary, size: 25);
+          }
+          return const IconThemeData(color: tertiary, size: 24);
+        }),
         labelTextStyle: WidgetStateProperty.all(
           const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
         ),
@@ -172,6 +197,9 @@ class MyApp extends StatelessWidget {
         foregroundColor: Colors.white,
         elevation: 0,
       ),
+      pageTransitionsTheme: _buildPageTransitionsTheme(),
+      iconTheme: const IconThemeData(color: primary),
+      listTileTheme: const ListTileThemeData(iconColor: primary),
       cardTheme: CardThemeData(
         color: surface,
         elevation: 0,
@@ -219,6 +247,13 @@ class MyApp extends StatelessWidget {
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
+        indicatorColor: primary.withAlpha(70),
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return const IconThemeData(color: primary, size: 25);
+          }
+          return const IconThemeData(color: Color(0xFFB6C2D1), size: 24);
+        }),
         labelTextStyle: WidgetStateProperty.all(
           const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
         ),
@@ -227,6 +262,19 @@ class MyApp extends StatelessWidget {
         bodyColor: Colors.white,
         displayColor: Colors.white,
       ),
+    );
+  }
+
+  PageTransitionsTheme _buildPageTransitionsTheme() {
+    return const PageTransitionsTheme(
+      builders: {
+        TargetPlatform.android: ZoomPageTransitionsBuilder(),
+        TargetPlatform.fuchsia: ZoomPageTransitionsBuilder(),
+        TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
+        TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
+      },
     );
   }
 }

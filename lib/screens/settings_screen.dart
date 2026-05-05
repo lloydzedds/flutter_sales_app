@@ -262,15 +262,15 @@ class _CloudDataManagementScreenState
   }
 }
 
-class _AccountsAndBackupScreen extends StatefulWidget {
-  const _AccountsAndBackupScreen();
+class AccountsAndBackupScreen extends StatefulWidget {
+  const AccountsAndBackupScreen({super.key});
 
   @override
-  State<_AccountsAndBackupScreen> createState() =>
+  State<AccountsAndBackupScreen> createState() =>
       _AccountsAndBackupScreenState();
 }
 
-class _AccountsAndBackupScreenState extends State<_AccountsAndBackupScreen> {
+class _AccountsAndBackupScreenState extends State<AccountsAndBackupScreen> {
   final _syncService = AccountSyncService.instance;
 
   CloudBackupInfo? _cloudBackupInfo;
@@ -605,11 +605,18 @@ class _AccountsAndBackupScreenState extends State<_AccountsAndBackupScreen> {
           children: [
             Text(
               title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
             ),
             if (subtitle != null) ...[
               const SizedBox(height: 4),
-              Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+              Text(
+                subtitle,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ],
             const SizedBox(height: 16),
             child,
@@ -640,6 +647,7 @@ class _AccountsAndBackupScreenState extends State<_AccountsAndBackupScreen> {
         children: [
           ListTile(
             contentPadding: EdgeInsets.zero,
+            isThreeLine: signedIn,
             leading: CircleAvatar(
               backgroundColor: Theme.of(context).colorScheme.primaryContainer,
               backgroundImage: _syncService.photoUrl == null
@@ -651,9 +659,22 @@ class _AccountsAndBackupScreenState extends State<_AccountsAndBackupScreen> {
             ),
             title: Text(
               title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
-            subtitle: Text(subtitle),
+            subtitle: Text(
+              subtitle,
+              maxLines: signedIn ? 3 : 4,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: signedIn
+                ? IconButton(
+                    onPressed: busy ? null : _changeGoogleAccount,
+                    icon: const Icon(Icons.edit_outlined),
+                    tooltip: "Change Google account",
+                  )
+                : null,
           ),
           if (!hasClientId && !signedIn)
             Container(
@@ -692,12 +713,6 @@ class _AccountsAndBackupScreenState extends State<_AccountsAndBackupScreen> {
               onPressed: busy ? null : _openCloudDataManager,
               icon: const Icon(Icons.manage_accounts_outlined),
               label: const Text("Manage My Cloud Data"),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: busy ? null : _changeGoogleAccount,
-              icon: const Icon(Icons.switch_account_outlined),
-              label: const Text("Change Google Account"),
             ),
             const SizedBox(height: 12),
             TextButton.icon(
@@ -850,7 +865,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _openAccountsAndBackup() async {
     await Navigator.of(
       context,
-    ).push(MaterialPageRoute(builder: (_) => const _AccountsAndBackupScreen()));
+    ).push(MaterialPageRoute(builder: (_) => const AccountsAndBackupScreen()));
     await _controller.reload();
     await _loadStoreDetails();
   }
@@ -868,17 +883,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             Text(
               title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
             ),
             if (subtitle != null) ...[
               const SizedBox(height: 4),
-              Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+              Text(
+                subtitle,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ],
             const SizedBox(height: 16),
             child,
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildHorizontalControl(Widget child) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minWidth: constraints.maxWidth),
+            child: child,
+          ),
+        );
+      },
     );
   }
 
@@ -915,30 +951,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    SegmentedButton<ThemeMode>(
-                      segments: const [
-                        ButtonSegment<ThemeMode>(
-                          value: ThemeMode.system,
-                          icon: Icon(Icons.phone_android_rounded),
-                          label: Text("System"),
-                        ),
-                        ButtonSegment<ThemeMode>(
-                          value: ThemeMode.light,
-                          icon: Icon(Icons.light_mode_outlined),
-                          label: Text("Light"),
-                        ),
-                        ButtonSegment<ThemeMode>(
-                          value: ThemeMode.dark,
-                          icon: Icon(Icons.dark_mode_outlined),
-                          label: Text("Dark"),
-                        ),
-                      ],
-                      selected: {_controller.themeMode},
-                      onSelectionChanged: (selection) {
-                        if (selection.isEmpty) return;
-                        _controller.setThemeMode(selection.first);
-                      },
-                      showSelectedIcon: false,
+                    _buildHorizontalControl(
+                      SegmentedButton<ThemeMode>(
+                        segments: const [
+                          ButtonSegment<ThemeMode>(
+                            value: ThemeMode.system,
+                            icon: Icon(Icons.phone_android_rounded),
+                            label: Text("System"),
+                          ),
+                          ButtonSegment<ThemeMode>(
+                            value: ThemeMode.light,
+                            icon: Icon(Icons.light_mode_outlined),
+                            label: Text("Light"),
+                          ),
+                          ButtonSegment<ThemeMode>(
+                            value: ThemeMode.dark,
+                            icon: Icon(Icons.dark_mode_outlined),
+                            label: Text("Dark"),
+                          ),
+                        ],
+                        selected: {_controller.themeMode},
+                        onSelectionChanged: (selection) {
+                          if (selection.isEmpty) return;
+                          _controller.setThemeMode(selection.first);
+                        },
+                        showSelectedIcon: false,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     Text(
@@ -955,30 +993,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    SegmentedButton<String>(
-                      segments: const [
-                        ButtonSegment<String>(
-                          value: 'manual',
-                          icon: Icon(Icons.edit_outlined),
-                          label: Text("Manual"),
-                        ),
-                        ButtonSegment<String>(
-                          value: 'sold_price',
-                          icon: Icon(Icons.sell_outlined),
-                          label: Text("Sold Price"),
-                        ),
-                        ButtonSegment<String>(
-                          value: 'percentage',
-                          icon: Icon(Icons.percent_rounded),
-                          label: Text("Percentage"),
-                        ),
-                      ],
-                      selected: {defaultDiscountMode},
-                      onSelectionChanged: (selection) {
-                        if (selection.isEmpty) return;
-                        _controller.setDefaultDiscountMode(selection.first);
-                      },
-                      showSelectedIcon: false,
+                    _buildHorizontalControl(
+                      SegmentedButton<String>(
+                        segments: const [
+                          ButtonSegment<String>(
+                            value: 'manual',
+                            icon: Icon(Icons.edit_outlined),
+                            label: Text("Manual"),
+                          ),
+                          ButtonSegment<String>(
+                            value: 'sold_price',
+                            icon: Icon(Icons.sell_outlined),
+                            label: Text("Sold Price"),
+                          ),
+                          ButtonSegment<String>(
+                            value: 'percentage',
+                            icon: Icon(Icons.percent_rounded),
+                            label: Text("Percent"),
+                          ),
+                        ],
+                        selected: {defaultDiscountMode},
+                        onSelectionChanged: (selection) {
+                          if (selection.isEmpty) return;
+                          _controller.setDefaultDiscountMode(selection.first);
+                        },
+                        showSelectedIcon: false,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     Text(

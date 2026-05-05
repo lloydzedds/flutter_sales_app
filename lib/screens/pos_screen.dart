@@ -611,12 +611,20 @@ class _PosScreenState extends State<PosScreen> {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          Expanded(child: Text(label)),
-          Text(
-            value,
-            style: TextStyle(
-              fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
-              fontSize: strong ? 18 : null,
+          Expanded(
+            child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: TextStyle(
+                fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
+                fontSize: strong ? 18 : null,
+              ),
             ),
           ),
         ],

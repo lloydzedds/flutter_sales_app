@@ -182,90 +182,62 @@ class _StockAdjustScreenState extends State<StockAdjustScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text("Stock Adjustment")),
-      body: Padding(
+      body: ListView(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            DropdownButtonFormField<int>(
-              initialValue: selectedProductId,
-              items: products.map((product) {
-                return DropdownMenuItem<int>(
-                  value: product['id'] as int,
-                  child: Text(product['name'].toString()),
-                );
-              }).toList(),
-              onChanged: (value) {
-                setState(() {
-                  selectedProductId = value;
-                  selectedProduct = value == null
-                      ? null
-                      : products.firstWhere((p) => p['id'] == value);
-                });
-              },
-              decoration: const InputDecoration(labelText: "Select Product"),
-            ),
-            if (selectedProduct != null) ...[
-              const SizedBox(height: 16),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: colorScheme.surface,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: colorScheme.outlineVariant.withAlpha(180),
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DropdownButtonFormField<int>(
+                initialValue: selectedProductId,
+                items: products.map((product) {
+                  return DropdownMenuItem<int>(
+                    value: product['id'] as int,
+                    child: Text(
+                      product['name'].toString(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    selectedProductId = value;
+                    selectedProduct = value == null
+                        ? null
+                        : products.firstWhere((p) => p['id'] == value);
+                  });
+                },
+                decoration: const InputDecoration(labelText: "Select Product"),
+              ),
+              if (selectedProduct != null) ...[
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surface,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: colorScheme.outlineVariant.withAlpha(180),
+                    ),
                   ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      selectedProduct!['name'].toString(),
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: colorScheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      "Current Stock",
-                      style: TextStyle(
-                        color: mutedTextColor,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      "${_currentStock()} units",
-                      style: TextStyle(
-                        color: colorScheme.onSurface,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      "Selling Price",
-                      style: TextStyle(
-                        color: mutedTextColor,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      "Rs ${selectedProduct!['selling_price']}",
-                      style: TextStyle(
-                        color: colorScheme.onSurface,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    if (previewStock != null) ...[
-                      const SizedBox(height: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        "Updated Stock",
+                        selectedProduct!['name'].toString(),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: colorScheme.onSurface,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        "Current Stock",
                         style: TextStyle(
                           color: mutedTextColor,
                           fontSize: 12,
@@ -274,60 +246,96 @@ class _StockAdjustScreenState extends State<StockAdjustScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        "$previewStock units",
+                        "${_currentStock()} units",
                         style: TextStyle(
-                          color: previewColor,
+                          color: colorScheme.onSurface,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        "Selling Price",
+                        style: TextStyle(
+                          color: mutedTextColor,
+                          fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
+                      const SizedBox(height: 2),
+                      Text(
+                        "Rs ${selectedProduct!['selling_price']}",
+                        style: TextStyle(
+                          color: colorScheme.onSurface,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (previewStock != null) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          "Updated Stock",
+                          style: TextStyle(
+                            color: mutedTextColor,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          "$previewStock units",
+                          style: TextStyle(
+                            color: previewColor,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              const Text(
+                "Adjustment Type",
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: StockAdjustMode.values.map((mode) {
+                  return ChoiceChip(
+                    label: Text(_modeLabel(mode)),
+                    selected: adjustmentMode == mode,
+                    onSelected: (_) {
+                      setState(() {
+                        adjustmentMode = mode;
+                      });
+                    },
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: qtyController,
+                decoration: InputDecoration(
+                  labelText: _quantityLabel(),
+                  helperText: adjustmentMode == StockAdjustMode.set
+                      ? "Enter the final stock you want to keep"
+                      : "Enter the quantity to change",
+                ),
+                keyboardType: TextInputType.number,
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: adjustStock,
+                  child: Text(_modeLabel(adjustmentMode)),
                 ),
               ),
             ],
-            const SizedBox(height: 16),
-            const Text(
-              "Adjustment Type",
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: StockAdjustMode.values.map((mode) {
-                return ChoiceChip(
-                  label: Text(_modeLabel(mode)),
-                  selected: adjustmentMode == mode,
-                  onSelected: (_) {
-                    setState(() {
-                      adjustmentMode = mode;
-                    });
-                  },
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: qtyController,
-              decoration: InputDecoration(
-                labelText: _quantityLabel(),
-                helperText: adjustmentMode == StockAdjustMode.set
-                    ? "Enter the final stock you want to keep"
-                    : "Enter the quantity to change",
-              ),
-              keyboardType: TextInputType.number,
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: adjustStock,
-                child: Text(_modeLabel(adjustmentMode)),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

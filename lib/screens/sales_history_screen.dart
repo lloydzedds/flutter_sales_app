@@ -1259,6 +1259,8 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                     children: [
                       Text(
                         title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
@@ -1268,6 +1270,8 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                         const SizedBox(height: 4),
                         Text(
                           subtitle,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
@@ -1335,9 +1339,13 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
           const Spacer(),
           Text(label, style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 4),
-          Text(
-            value,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+            ),
           ),
           if (caption != null) ...[
             const SizedBox(height: 4),
@@ -1353,10 +1361,18 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         children: [
-          Expanded(child: Text(label)),
-          Text(
-            value,
-            style: TextStyle(fontWeight: FontWeight.w700, color: valueColor),
+          Expanded(
+            child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: TextStyle(fontWeight: FontWeight.w700, color: valueColor),
+            ),
           ),
         ],
       ),
@@ -2186,6 +2202,9 @@ class _OrderChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width - 64,
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.primary.withAlpha(10),
@@ -2193,6 +2212,8 @@ class _OrderChip extends StatelessWidget {
       ),
       child: Text(
         "$label: $value",
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
           fontWeight: FontWeight.w600,
           color: valueColor,

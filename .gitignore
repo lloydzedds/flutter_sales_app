@@ -33,6 +33,9 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Local visual QA captures
+qa_screenshots/
+
 # Symbolication related
 app.*.symbols
 

@@ -114,6 +114,8 @@ class _CustomersScreenState extends State<CustomersScreen> {
           customer['name']?.toString().trim().isNotEmpty == true
               ? customer['name'].toString().trim()
               : 'Unnamed Customer',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontWeight: FontWeight.w700),
         ),
         subtitle: Padding(
@@ -121,14 +123,22 @@ class _CustomersScreenState extends State<CustomersScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(phone.isEmpty ? "Phone not saved" : phone),
+              Text(
+                phone.isEmpty ? "Phone not saved" : phone,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
               const SizedBox(height: 6),
               Text(
                 "Orders: ${customer['orders_count']} • Spent: ${_formatCurrency(customer['total_spent'])}",
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 4),
               Text(
                 "Last purchase: ${_formatDate(customer['last_purchase_date']?.toString())}",
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),

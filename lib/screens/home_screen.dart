@@ -42,7 +42,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  static const double _headerReservedSpace = 108;
+  static const double _headerReservedSpace = 116;
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   Color get _background => Theme.of(context).colorScheme.surfaceContainerLowest;
@@ -59,6 +59,27 @@ class _HomeScreenState extends State<HomeScreen> {
   Color get _danger => Theme.of(context).colorScheme.error;
   Color get _warning => const Color(0xFFF59E0B);
   Color get _info => const Color(0xFF2563EB);
+
+  Color _tabColor(int index) {
+    switch (index) {
+      case 0:
+        return const Color(0xFF0F766E);
+      case 1:
+        return const Color(0xFF2563EB);
+      case 2:
+        return const Color(0xFFF59E0B);
+      case 3:
+        return const Color(0xFF8B5CF6);
+      case 4:
+        return const Color(0xFFDC2626);
+      default:
+        return _accent;
+    }
+  }
+
+  Widget _navIcon(IconData icon, int index) {
+    return Icon(icon, color: _isDark ? null : _tabColor(index));
+  }
 
   int _selectedTab = 0;
   bool _isLoading = true;
@@ -183,7 +204,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       clipBehavior: Clip.antiAlias,
       child: bytes == null
-          ? const Icon(Icons.inventory_2_outlined, color: Colors.white)
+          ? Icon(Icons.inventory_2_outlined, color: _accent)
           : Image.memory(bytes, fit: BoxFit.cover),
     );
   }
@@ -366,6 +387,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _selectTab(int index) {
+    if (_selectedTab == index) {
+      return;
+    }
+
     setState(() {
       _selectedTab = index;
       _isHeaderScrolled = false;
@@ -635,7 +660,7 @@ class _HomeScreenState extends State<HomeScreen> {
       case 2:
         return "Inventory";
       case 3:
-        return "Stock Control";
+        return "Accounts";
       case 4:
         return "Reports";
       default:
@@ -652,7 +677,7 @@ class _HomeScreenState extends State<HomeScreen> {
       case 2:
         return "Manage products and quick stock edits";
       case 3:
-        return "Keep inventory healthy and react fast";
+        return "Account, backup, and app data controls";
       case 4:
         return "Range based performance for sales and revenue";
       default:
@@ -716,22 +741,26 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       Text(
                         _currentTabTitle(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 26,
+                          fontSize: 24,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         _currentTabSubtitle(),
-                        style: TextStyle(color: _mutedText, fontSize: 13),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: _mutedText, fontSize: 12.5),
                       ),
                     ],
                   ),
                 ),
                 Container(
-                  height: 48,
-                  width: 48,
+                  height: 44,
+                  width: 44,
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
                       colors: [Color(0xFF0E6BBE), Color(0xFF0B4D86)],
@@ -741,6 +770,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   alignment: Alignment.center,
                   child: IconButton(
                     onPressed: () => _pushAndRefresh(const SettingsScreen()),
+                    style: IconButton.styleFrom(
+                      minimumSize: const Size(44, 44),
+                      padding: EdgeInsets.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
                     icon: const Icon(
                       Icons.settings_rounded,
                       color: Colors.white,
@@ -749,8 +783,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(width: 12),
                 Container(
-                  height: 48,
-                  width: 48,
+                  height: 44,
+                  width: 44,
                   decoration: BoxDecoration(
                     color: _surface,
                     border: Border.all(color: _border),
@@ -758,6 +792,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   child: IconButton(
                     onPressed: () => _showMessage("No notifications yet"),
+                    style: IconButton.styleFrom(
+                      minimumSize: const Size(44, 44),
+                      padding: EdgeInsets.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
                     icon: const Icon(Icons.notifications_none_rounded),
                   ),
                 ),
@@ -782,11 +821,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildPromoCard() {
     return InkWell(
       onTap: () => _pushAndRefresh(const HowToUseScreen()),
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(18),
       child: Container(
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(18),
           gradient: const LinearGradient(
             colors: [Color(0xFF9B6DFF), Color(0xFF7E59D8)],
             begin: Alignment.topLeft,
@@ -795,44 +834,40 @@ class _HomeScreenState extends State<HomeScreen> {
           boxShadow: const [
             BoxShadow(
               color: Color(0x33261A46),
-              blurRadius: 24,
-              offset: Offset(0, 14),
+              blurRadius: 16,
+              offset: Offset(0, 8),
             ),
           ],
         ),
         child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(12),
+              height: 40,
+              width: 40,
               decoration: BoxDecoration(
                 color: _mutedText,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(14),
               ),
-              child: const Icon(Icons.auto_graph_rounded, size: 28),
+              child: const Icon(Icons.auto_graph_rounded, size: 22),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
             const Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    "Sale Buddy / My Accounts",
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                    "Sale Buddy",
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                   ),
-                  SizedBox(height: 4),
+                  SizedBox(height: 3),
                   Text(
-                    "Track revenue, products, stock and recent sales from one place.",
-                    style: TextStyle(fontSize: 12.5, height: 1.35),
-                  ),
-                  SizedBox(height: 6),
-                  Text(
-                    "Tap to open the quick guide",
-                    style: TextStyle(fontSize: 11.5),
+                    "Track revenue, products, stock, and recent sales.",
+                    style: TextStyle(fontSize: 11.5, height: 1.25),
                   ),
                 ],
               ),
             ),
-            const Icon(Icons.arrow_forward_ios_rounded, size: 16),
+            const Icon(Icons.chevron_right_rounded, size: 18),
           ],
         ),
       ),
@@ -928,9 +963,13 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
           const Spacer(),
-          Text(
-            value,
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+            ),
           ),
           if (caption != null) ...[
             const SizedBox(height: 6),
@@ -1046,9 +1085,13 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
           const Spacer(),
-          Text(
-            _formatMoney(isLoss ? totalProfit.abs() : totalProfit),
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              _formatMoney(isLoss ? totalProfit.abs() : totalProfit),
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+            ),
           ),
           const SizedBox(height: 8),
           _buildMetricPill(label: resultLabel, color: accentColor),
@@ -1102,9 +1145,13 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
           const Spacer(),
-          Text(
-            "$_productCount",
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              "$_productCount",
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+            ),
           ),
           const SizedBox(height: 4),
           Text(
@@ -1718,6 +1765,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Text(
                     title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 16,
@@ -1726,6 +1775,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 4),
                   Text(
                     subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: _mutedText, fontSize: 12),
                   ),
                 ],
@@ -1750,9 +1801,13 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Text(label, style: TextStyle(color: _mutedText)),
           const SizedBox(height: 10),
-          Text(
-            value,
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+            ),
           ),
         ],
       ),
@@ -1763,9 +1818,23 @@ class _HomeScreenState extends State<HomeScreen> {
     return Row(
       children: [
         Expanded(
-          child: Text(label, style: TextStyle(color: _mutedText)),
+          child: Text(
+            label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: _mutedText),
+          ),
         ),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.w700)),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Text(
+            value,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.end,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
       ],
     );
   }
@@ -1783,7 +1852,7 @@ class _HomeScreenState extends State<HomeScreen> {
       case 2:
         return _buildInventoryTab();
       case 3:
-        return _buildStockTab();
+        return _buildAccountsTab();
       case 4:
         return _buildReportsTab();
       default:
@@ -1951,6 +2020,12 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       const SizedBox(height: 16),
       _buildPanel(
+        title: "Products Needing Attention",
+        subtitle: "Tap adjust to change stock quickly",
+        child: _buildStockActionList(_lowStockProducts),
+      ),
+      const SizedBox(height: 16),
+      _buildPanel(
         title: "Products",
         subtitle:
             "Search, sort, and long press any product to edit or adjust stock",
@@ -1974,24 +2049,42 @@ class _HomeScreenState extends State<HomeScreen> {
     ]);
   }
 
-  Widget _buildStockTab() {
+  Widget _buildAccountsTab() {
     return _buildScrollableTab([
       _buildPanel(
-        title: "Adjust Stock",
-        subtitle: "Open the stock editor for manual updates",
-        child: _buildWideActionTile(
-          title: "Open Stock Adjustment",
-          subtitle: "Add, remove or set exact stock",
-          icon: Icons.inventory_2_outlined,
-          color: _accent,
-          onTap: () => _openStockAdjustment(),
+        title: "Accounts and Backup",
+        subtitle: "Google sign-in, cloud backup, and local data controls",
+        child: Column(
+          children: [
+            _buildWideActionTile(
+              title: "Open Accounts and Backup",
+              subtitle: "Manage account, automatic backup, and cloud data",
+              icon: Icons.manage_accounts_outlined,
+              color: _accent,
+              onTap: () => _pushAndRefresh(const AccountsAndBackupScreen()),
+            ),
+            const SizedBox(height: 12),
+            _buildWideActionTile(
+              title: "Settings",
+              subtitle: "Appearance, invoice details, and sale defaults",
+              icon: Icons.settings_outlined,
+              color: _info,
+              onTap: () => _pushAndRefresh(const SettingsScreen()),
+            ),
+          ],
         ),
       ),
       const SizedBox(height: 16),
       _buildPanel(
-        title: "Products Needing Attention",
-        subtitle: "Tap adjust to change stock quickly",
-        child: _buildStockActionList(_lowStockProducts),
+        title: "Help",
+        subtitle: "Open the app guide when training a new user",
+        child: _buildWideActionTile(
+          title: "How to Use Sale Buddy",
+          subtitle: "Quick guide for sales, inventory, and reports",
+          icon: Icons.menu_book_outlined,
+          color: _accent,
+          onTap: () => _pushAndRefresh(const HowToUseScreen()),
+        ),
       ),
     ]);
   }
@@ -2040,6 +2133,18 @@ class _HomeScreenState extends State<HomeScreen> {
             Positioned.fill(
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 260),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, animation) {
+                  final offset = Tween<Offset>(
+                    begin: const Offset(0.04, 0),
+                    end: Offset.zero,
+                  ).animate(animation);
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(position: offset, child: child),
+                  );
+                },
                 child: KeyedSubtree(
                   key: ValueKey(_selectedTab),
                   child: _buildTabContent(),
@@ -2057,30 +2162,30 @@ class _HomeScreenState extends State<HomeScreen> {
         selectedIndex: _selectedTab,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         onDestinationSelected: _selectTab,
-        destinations: const [
+        destinations: [
           NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home_rounded),
+            icon: _navIcon(Icons.home_outlined, 0),
+            selectedIcon: _navIcon(Icons.home_rounded, 0),
             label: "Dashboard",
           ),
           NavigationDestination(
-            icon: Icon(Icons.shopping_cart_outlined),
-            selectedIcon: Icon(Icons.shopping_cart_rounded),
+            icon: _navIcon(Icons.shopping_cart_outlined, 1),
+            selectedIcon: _navIcon(Icons.shopping_cart_rounded, 1),
             label: "Sales",
           ),
           NavigationDestination(
-            icon: Icon(Icons.inventory_2_outlined),
-            selectedIcon: Icon(Icons.inventory_2_rounded),
+            icon: _navIcon(Icons.inventory_2_outlined, 2),
+            selectedIcon: _navIcon(Icons.inventory_2_rounded, 2),
             label: "Inventory",
           ),
           NavigationDestination(
-            icon: Icon(Icons.tune_outlined),
-            selectedIcon: Icon(Icons.tune_rounded),
-            label: "Stock",
+            icon: _navIcon(Icons.account_circle_outlined, 3),
+            selectedIcon: _navIcon(Icons.account_circle_rounded, 3),
+            label: "Accounts",
           ),
           NavigationDestination(
-            icon: Icon(Icons.bar_chart_outlined),
-            selectedIcon: Icon(Icons.bar_chart_rounded),
+            icon: _navIcon(Icons.bar_chart_outlined, 4),
+            selectedIcon: _navIcon(Icons.bar_chart_rounded, 4),
             label: "Reports",
           ),
         ],

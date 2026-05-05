@@ -1592,10 +1592,18 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         children: [
-          Expanded(child: Text(label)),
-          Text(
-            value,
-            style: TextStyle(fontWeight: FontWeight.w700, color: valueColor),
+          Expanded(
+            child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: TextStyle(fontWeight: FontWeight.w700, color: valueColor),
+            ),
           ),
         ],
       ),
@@ -1639,6 +1647,8 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
               Expanded(
                 child: Text(
                   item.productName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 15,
@@ -1931,6 +1941,9 @@ class _DetailChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width - 64,
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface.withAlpha(120),
@@ -1941,6 +1954,8 @@ class _DetailChip extends StatelessWidget {
       ),
       child: Text(
         "$label: $value",
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
         style: Theme.of(
           context,
         ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),

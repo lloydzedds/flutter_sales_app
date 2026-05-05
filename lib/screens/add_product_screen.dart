@@ -778,9 +778,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
                           size: 42,
                           icon: Icons.history_toggle_off_rounded,
                         ),
-                        title: Text(product['name']?.toString() ?? ''),
+                        title: Text(
+                          product['name']?.toString() ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                         subtitle: Text(
                           "Cost ${_formatCurrency(product['cost_price'])} • Selling ${_formatCurrency(product['selling_price'])} • Stock ${product['stock']}",
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
                         onTap: () => _selectExistingProduct(product),
                       );
@@ -968,10 +974,18 @@ class _AddProductScreenState extends State<AddProductScreen> {
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         children: [
-          Expanded(child: Text(label)),
-          Text(
-            value,
-            style: TextStyle(fontWeight: FontWeight.w700, color: valueColor),
+          Expanded(
+            child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: TextStyle(fontWeight: FontWeight.w700, color: valueColor),
+            ),
           ),
         ],
       ),

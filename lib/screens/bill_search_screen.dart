@@ -154,9 +154,7 @@ class _BillSearchScreenState extends State<BillSearchScreen> {
   bool get _hasSearchQuery => _searchController.text.trim().isNotEmpty;
 
   bool get _hasFilters =>
-      _hasSearchQuery ||
-      _walkInOnly ||
-      _searchScope != _BillSearchScope.all;
+      _hasSearchQuery || _walkInOnly || _searchScope != _BillSearchScope.all;
 
   List<Map<String, dynamic>> get _orders {
     final query = _normalized(_searchController.text);
@@ -655,10 +653,18 @@ class _BillSearchScreenState extends State<BillSearchScreen> {
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         children: [
-          Expanded(child: Text(label)),
-          Text(
-            value,
-            style: TextStyle(fontWeight: FontWeight.w700, color: valueColor),
+          Expanded(
+            child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: TextStyle(fontWeight: FontWeight.w700, color: valueColor),
+            ),
           ),
         ],
       ),
@@ -750,10 +756,7 @@ class _BillSearchScreenState extends State<BillSearchScreen> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                _BillSearchChip(
-                  label: "Visible",
-                  value: "${_orders.length}",
-                ),
+                _BillSearchChip(label: "Visible", value: "${_orders.length}"),
                 _BillSearchChip(
                   label: "All Bills",
                   value: "${_allOrders.length}",
@@ -913,9 +916,7 @@ class _BillSearchScreenState extends State<BillSearchScreen> {
       );
     }
 
-    return Column(
-      children: _orders.map(_buildResultCard).toList(),
-    );
+    return Column(children: _orders.map(_buildResultCard).toList());
   }
 
   @override
@@ -959,6 +960,9 @@ class _BillSearchChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width - 64,
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.primary.withAlpha(10),
@@ -966,6 +970,8 @@ class _BillSearchChip extends StatelessWidget {
       ),
       child: Text(
         "$label: $value",
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
           fontWeight: FontWeight.w600,
           color: valueColor,
