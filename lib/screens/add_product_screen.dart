@@ -428,8 +428,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
       final pickedFile = await _imagePicker.pickImage(
         source: source,
-        imageQuality: 88,
-        maxWidth: 1600,
+        imageQuality: 62,
+        maxWidth: 512,
+        maxHeight: 512,
       );
       if (pickedFile == null) {
         return;

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
@@ -16,6 +17,9 @@ class AccountSyncService extends ChangeNotifier {
 
   static const _backupFileName = 'sale_buddy_sales.db';
   static const _scopes = <String>[drive.DriveApi.driveAppdataScope];
+  static const _autoBackupFrequencyKey = 'auto_cloud_backup_frequency';
+  static const _autoBackupNetworkKey = 'cloud_backup_network';
+  static const _lastAutoBackupAtKey = 'last_auto_cloud_backup_at';
   static const _developmentWebClientId =
       '244833529337-7u9dh7p43iva3j5fdhad2nus2lbm9u0u.apps.googleusercontent.com';
   static const _bundledWebClientId = String.fromEnvironment(
@@ -27,6 +31,9 @@ class AccountSyncService extends ChangeNotifier {
   bool _initialized = false;
   bool _isBusy = false;
   String _configuredWebClientId = '';
+  String _automaticBackupFrequency = 'off';
+  String _cloudBackupNetwork = 'any';
+  DateTime? _lastAutomaticBackupAt;
 
   GoogleSignInAccount? get account => _account;
   bool get isSignedIn => _account != null;
@@ -36,6 +43,9 @@ class AccountSyncService extends ChangeNotifier {
   String? get photoUrl => _account?.photoUrl;
   String get configuredWebClientId => _configuredWebClientId;
   bool get hasConfiguredWebClientId => _configuredWebClientId.isNotEmpty;
+  String get automaticBackupFrequency => _automaticBackupFrequency;
+  String get cloudBackupNetwork => _cloudBackupNetwork;
+  DateTime? get lastAutomaticBackupAt => _lastAutomaticBackupAt;
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -107,7 +117,14 @@ class AccountSyncService extends ChangeNotifier {
   }
 
   Future<CloudBackupInfo> uploadCurrentDatabase() async {
-    final api = await _driveApi();
+    return _uploadCurrentDatabase(promptIfNecessary: true);
+  }
+
+  Future<CloudBackupInfo> _uploadCurrentDatabase({
+    required bool promptIfNecessary,
+  }) async {
+    await _ensureBackupNetworkAllowed();
+    final api = await _driveApi(promptIfNecessary: promptIfNecessary);
     _setBusy(true);
     try {
       final tempDirectory = await getTemporaryDirectory();
@@ -245,7 +262,7 @@ class AccountSyncService extends ChangeNotifier {
     return directory;
   }
 
-  Future<drive.DriveApi> _driveApi() async {
+  Future<drive.DriveApi> _driveApi({bool promptIfNecessary = true}) async {
     await initialize();
     final user = _account;
     if (user == null) {
@@ -254,7 +271,7 @@ class AccountSyncService extends ChangeNotifier {
 
     final headers = await user.authorizationClient.authorizationHeaders(
       _scopes,
-      promptIfNecessary: true,
+      promptIfNecessary: promptIfNecessary,
     );
     if (headers == null) {
       throw Exception('Google Drive permission was not granted.');
@@ -284,14 +301,116 @@ class AccountSyncService extends ChangeNotifier {
 
   Future<void> loadConfiguration() async {
     final value = await _loadConfiguredWebClientId();
+    final frequency = await DatabaseHelper.instance.getAppSetting(
+      _autoBackupFrequencyKey,
+    );
+    final network = await DatabaseHelper.instance.getAppSetting(
+      _autoBackupNetworkKey,
+    );
+    final lastBackup = await DatabaseHelper.instance.getAppSetting(
+      _lastAutoBackupAtKey,
+    );
     _configuredWebClientId = value;
+    _automaticBackupFrequency = _normalizeFrequency(frequency);
+    _cloudBackupNetwork = _normalizeNetwork(network);
+    _lastAutomaticBackupAt = DateTime.tryParse(lastBackup ?? '');
     notifyListeners();
+  }
+
+  Future<void> setAutomaticBackupFrequency(String value) async {
+    _automaticBackupFrequency = _normalizeFrequency(value);
+    await DatabaseHelper.instance.saveAppSetting(
+      _autoBackupFrequencyKey,
+      _automaticBackupFrequency,
+    );
+    notifyListeners();
+  }
+
+  Future<void> setCloudBackupNetwork(String value) async {
+    _cloudBackupNetwork = _normalizeNetwork(value);
+    await DatabaseHelper.instance.saveAppSetting(
+      _autoBackupNetworkKey,
+      _cloudBackupNetwork,
+    );
+    notifyListeners();
+  }
+
+  Future<CloudBackupInfo?> runScheduledBackupIfDue() async {
+    await loadConfiguration();
+    if (!isSignedIn || _automaticBackupFrequency == 'off' || _isBusy) {
+      return null;
+    }
+
+    final now = DateTime.now();
+    final last = _lastAutomaticBackupAt;
+    final dueAfter = _automaticBackupFrequency == 'weekly'
+        ? const Duration(days: 7)
+        : const Duration(days: 1);
+    if (last != null && now.difference(last) < dueAfter) {
+      return null;
+    }
+
+    try {
+      final info = await _uploadCurrentDatabase(promptIfNecessary: false);
+      _lastAutomaticBackupAt = now;
+      await DatabaseHelper.instance.saveAppSetting(
+        _lastAutoBackupAtKey,
+        now.toIso8601String(),
+      );
+      notifyListeners();
+      return info;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<String> _loadConfiguredWebClientId() async {
     final bundledValue = _bundledWebClientId.trim();
     if (bundledValue.isNotEmpty) return bundledValue;
     return _developmentWebClientId;
+  }
+
+  String _normalizeFrequency(String? value) {
+    switch (value) {
+      case 'daily':
+      case 'weekly':
+      case 'off':
+        return value!;
+      default:
+        return 'off';
+    }
+  }
+
+  String _normalizeNetwork(String? value) {
+    switch (value) {
+      case 'wifi':
+      case 'mobile':
+      case 'any':
+        return value!;
+      default:
+        return 'any';
+    }
+  }
+
+  Future<void> _ensureBackupNetworkAllowed() async {
+    final network = _normalizeNetwork(_cloudBackupNetwork);
+    final results = await Connectivity().checkConnectivity();
+    final hasConnection = !results.contains(ConnectivityResult.none);
+    if (!hasConnection) {
+      throw Exception('No internet connection available for cloud backup.');
+    }
+
+    if (network == 'any') return;
+    if (network == 'wifi' && results.contains(ConnectivityResult.wifi)) return;
+    if (network == 'mobile' && results.contains(ConnectivityResult.mobile)) {
+      return;
+    }
+
+    throw Exception(
+      network == 'wifi'
+          ? 'Cloud backup is set to Wi-Fi only. Connect to Wi-Fi or change the backup network setting.'
+          : 'Cloud backup is set to mobile data only. Connect to mobile data or change the backup network setting.',
+    );
   }
 
   @override

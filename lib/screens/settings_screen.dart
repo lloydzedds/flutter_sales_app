@@ -262,21 +262,27 @@ class _CloudDataManagementScreenState
   }
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
-  final _controller = AppSettingsController.instance;
+class _AccountsAndBackupScreen extends StatefulWidget {
+  const _AccountsAndBackupScreen();
+
+  @override
+  State<_AccountsAndBackupScreen> createState() =>
+      _AccountsAndBackupScreenState();
+}
+
+class _AccountsAndBackupScreenState extends State<_AccountsAndBackupScreen> {
   final _syncService = AccountSyncService.instance;
 
-  Map<String, String> _storeDetails = {};
-  bool _isBusy = false;
   CloudBackupInfo? _cloudBackupInfo;
+  bool _isLocalBackupBusy = false;
 
   @override
   void initState() {
     super.initState();
     _syncService.addListener(_handleSyncChanged);
-    _loadStoreDetails();
     _loadGoogleSignInConfiguration();
     _loadCloudBackupInfo();
+    _runScheduledCloudBackup();
   }
 
   @override
@@ -291,27 +297,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _loadStoreDetails() async {
-    final details = await DatabaseHelper.instance.getStoreDetails();
-    if (!mounted) return;
-    setState(() {
-      _storeDetails = details;
-    });
-  }
-
   Future<void> _loadGoogleSignInConfiguration() async {
     await _syncService.loadConfiguration();
   }
 
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  String _formatCloudDate(DateTime? value) {
-    if (value == null) return 'No cloud backup yet';
-    return DateFormat('MMM d, yyyy h:mm a').format(value.toLocal());
+  Future<void> _runScheduledCloudBackup() async {
+    final info = await _syncService.runScheduledBackupIfDue();
+    if (!mounted || info == null) return;
+    setState(() {
+      _cloudBackupInfo = info;
+    });
+    _showMessage("Automatic cloud backup saved");
   }
 
   Future<void> _loadCloudBackupInfo() async {
@@ -337,10 +333,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  String _formatCloudDate(DateTime? value) {
+    if (value == null) return 'No cloud backup yet';
+    return DateFormat('MMM d, yyyy h:mm a').format(value.toLocal());
+  }
+
   Future<void> _signInWithGoogle() async {
     try {
       await _syncService.signIn();
       await _loadCloudBackupInfo();
+      await _runScheduledCloudBackup();
       if (!mounted) return;
       _showMessage("Signed in as ${_syncService.email}");
     } catch (error) {
@@ -354,6 +362,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _loadCloudBackupInfo();
     if (!mounted) return;
     _showMessage("Signed out");
+  }
+
+  Future<void> _changeGoogleAccount() async {
+    try {
+      await _syncService.signOut();
+      await _loadCloudBackupInfo();
+      await _syncService.signIn();
+      await _loadCloudBackupInfo();
+      await _runScheduledCloudBackup();
+      if (!mounted) return;
+      _showMessage("Signed in as ${_syncService.email}");
+    } catch (error) {
+      if (!mounted) return;
+      _showMessage(error.toString().replaceFirst('Exception: ', ''));
+    }
   }
 
   Future<void> _backupToCloud() async {
@@ -397,8 +420,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     try {
       final info = await _syncService.restoreLatestDatabase();
-      await _controller.reload();
-      await _loadStoreDetails();
+      await AppSettingsController.instance.reload();
       if (!mounted) return;
       setState(() {
         _cloudBackupInfo = info;
@@ -454,23 +476,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Future<void> _openStoreDetails() async {
-    final updated = await Navigator.of(
-      context,
-    ).push<bool>(MaterialPageRoute(builder: (_) => const StoreDetailsScreen()));
-
-    if (!mounted || updated != true) return;
-    await _loadStoreDetails();
-    if (!mounted) return;
-    _showMessage("Store details updated");
-  }
-
   Future<void> _backupData() async {
     final action = await _pickBackupAction();
     if (action == null) return;
 
     setState(() {
-      _isBusy = true;
+      _isLocalBackupBusy = true;
     });
 
     try {
@@ -501,7 +512,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } finally {
       if (mounted) {
         setState(() {
-          _isBusy = false;
+          _isLocalBackupBusy = false;
         });
       }
     }
@@ -520,13 +531,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (selectedPath == null) return;
 
     setState(() {
-      _isBusy = true;
+      _isLocalBackupBusy = true;
     });
 
     try {
       await DatabaseHelper.instance.restoreDatabaseFromFile(selectedPath);
-      await _controller.reload();
-      await _loadStoreDetails();
+      await AppSettingsController.instance.reload();
 
       if (!mounted) return;
       _showMessage("Backup restored successfully");
@@ -536,9 +546,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } finally {
       if (mounted) {
         setState(() {
-          _isBusy = false;
+          _isLocalBackupBusy = false;
         });
       }
+    }
+  }
+
+  Future<void> _changeAutomaticBackupFrequency(String? value) async {
+    if (value == null) return;
+    await _syncService.setAutomaticBackupFrequency(value);
+    if (!mounted) return;
+    _showMessage(
+      "Automatic cloud backups set to ${_backupFrequencyLabel(value)}",
+    );
+    await _runScheduledCloudBackup();
+  }
+
+  Future<void> _changeCloudBackupNetwork(String? value) async {
+    if (value == null) return;
+    await _syncService.setCloudBackupNetwork(value);
+    if (!mounted) return;
+    _showMessage("Cloud backup network set to ${_backupNetworkLabel(value)}");
+    await _runScheduledCloudBackup();
+  }
+
+  String _backupFrequencyLabel(String value) {
+    switch (value) {
+      case 'daily':
+        return 'Daily';
+      case 'weekly':
+        return 'Weekly';
+      default:
+        return 'Off';
+    }
+  }
+
+  String _backupNetworkLabel(String value) {
+    switch (value) {
+      case 'wifi':
+        return 'Wi-Fi only';
+      case 'mobile':
+        return 'Mobile data only';
+      default:
+        return 'Any network';
     }
   }
 
@@ -583,9 +633,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         : "Sign in with Google to save and restore this device's data from your account.";
 
     return _buildSection(
-      title: "Account and Cloud Backup",
+      title: "Google Account",
       subtitle: "Save and restore data with Google Drive app data",
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -606,7 +657,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           if (!hasClientId && !signedIn)
             Container(
-              width: double.infinity,
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -620,49 +670,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           const SizedBox(height: 12),
           if (!signedIn)
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: busy || !hasClientId ? null : _signInWithGoogle,
-                icon: const Icon(Icons.login_rounded),
-                label: const Text("Sign in with Google"),
-              ),
+            ElevatedButton.icon(
+              onPressed: busy || !hasClientId ? null : _signInWithGoogle,
+              icon: const Icon(Icons.login_rounded),
+              label: const Text("Sign in with Google"),
             )
           else ...[
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: busy ? null : _backupToCloud,
-                icon: const Icon(Icons.cloud_upload_outlined),
-                label: const Text("Save Backup to Google"),
-              ),
+            ElevatedButton.icon(
+              onPressed: busy ? null : _backupToCloud,
+              icon: const Icon(Icons.cloud_upload_outlined),
+              label: const Text("Save Backup to Google"),
             ),
             const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: busy ? null : _restoreFromCloud,
-                icon: const Icon(Icons.cloud_download_outlined),
-                label: const Text("Restore from Google"),
-              ),
+            OutlinedButton.icon(
+              onPressed: busy ? null : _restoreFromCloud,
+              icon: const Icon(Icons.cloud_download_outlined),
+              label: const Text("Restore from Google"),
             ),
             const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: busy ? null : _openCloudDataManager,
-                icon: const Icon(Icons.manage_accounts_outlined),
-                label: const Text("Manage My Cloud Data"),
-              ),
+            OutlinedButton.icon(
+              onPressed: busy ? null : _openCloudDataManager,
+              icon: const Icon(Icons.manage_accounts_outlined),
+              label: const Text("Manage My Cloud Data"),
             ),
             const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: TextButton.icon(
-                onPressed: busy ? null : _signOutFromGoogle,
-                icon: const Icon(Icons.logout_rounded),
-                label: const Text("Sign Out"),
-              ),
+            OutlinedButton.icon(
+              onPressed: busy ? null : _changeGoogleAccount,
+              icon: const Icon(Icons.switch_account_outlined),
+              label: const Text("Change Google Account"),
+            ),
+            const SizedBox(height: 12),
+            TextButton.icon(
+              onPressed: busy ? null : _signOutFromGoogle,
+              icon: const Icon(Icons.logout_rounded),
+              label: const Text("Sign Out"),
             ),
           ],
           if (busy) ...[
@@ -670,6 +711,173 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const LinearProgressIndicator(),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildBackupSettingsSection() {
+    final busy = _syncService.isBusy;
+
+    return _buildSection(
+      title: "Automatic Backup Settings",
+      subtitle: "Choose when and how Google Drive backups are uploaded",
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          DropdownButtonFormField<String>(
+            initialValue: _syncService.automaticBackupFrequency,
+            decoration: const InputDecoration(
+              labelText: "Automatic cloud backup",
+            ),
+            items: const [
+              DropdownMenuItem(value: 'off', child: Text("Off")),
+              DropdownMenuItem(value: 'daily', child: Text("Daily")),
+              DropdownMenuItem(value: 'weekly', child: Text("Weekly")),
+            ],
+            onChanged: busy ? null : _changeAutomaticBackupFrequency,
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: _syncService.cloudBackupNetwork,
+            decoration: const InputDecoration(labelText: "Backup network"),
+            items: const [
+              DropdownMenuItem(value: 'any', child: Text("Any network")),
+              DropdownMenuItem(value: 'wifi', child: Text("Wi-Fi only")),
+              DropdownMenuItem(
+                value: 'mobile',
+                child: Text("Mobile data only"),
+              ),
+            ],
+            onChanged: busy ? null : _changeCloudBackupNetwork,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            _syncService.lastAutomaticBackupAt == null
+                ? "Automatic backups run when the signed-in app is opened and Drive permission is already available."
+                : "Last automatic backup: ${_formatCloudDate(_syncService.lastAutomaticBackupAt)}",
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLocalBackupSection() {
+    return _buildSection(
+      title: "Local Backup",
+      subtitle:
+          "Create a device backup file or restore from an existing backup",
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ElevatedButton.icon(
+            onPressed: _isLocalBackupBusy ? null : _backupData,
+            icon: const Icon(Icons.backup_outlined),
+            label: const Text("Take Local Backup"),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _isLocalBackupBusy ? null : _restoreData,
+            icon: const Icon(Icons.restore_rounded),
+            label: const Text("Restore Local Backup"),
+          ),
+          if (_isLocalBackupBusy) ...[
+            const SizedBox(height: 14),
+            const LinearProgressIndicator(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("Accounts and Backup")),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _buildAccountSection(),
+          _buildLocalBackupSection(),
+          _buildBackupSettingsSection(),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  final _controller = AppSettingsController.instance;
+
+  Map<String, String> _storeDetails = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStoreDetails();
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
+  Future<void> _loadStoreDetails() async {
+    final details = await DatabaseHelper.instance.getStoreDetails();
+    if (!mounted) return;
+    setState(() {
+      _storeDetails = details;
+    });
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _openStoreDetails() async {
+    final updated = await Navigator.of(
+      context,
+    ).push<bool>(MaterialPageRoute(builder: (_) => const StoreDetailsScreen()));
+
+    if (!mounted || updated != true) return;
+    await _loadStoreDetails();
+    if (!mounted) return;
+    _showMessage("Store details updated");
+  }
+
+  Future<void> _openAccountsAndBackup() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const _AccountsAndBackupScreen()));
+    await _controller.reload();
+    await _loadStoreDetails();
+  }
+
+  Widget _buildSection({
+    required String title,
+    String? subtitle,
+    required Widget child,
+  }) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 4),
+              Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+            ],
+            const SizedBox(height: 16),
+            child,
+          ],
+        ),
       ),
     );
   }
@@ -688,7 +896,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              _buildAccountSection(),
+              _buildSection(
+                title: "Accounts and Backup",
+                subtitle:
+                    "Google sign-in, cloud backup, restore, and data controls",
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _openAccountsAndBackup,
+                    icon: const Icon(Icons.manage_accounts_outlined),
+                    label: const Text("Accounts and Backup"),
+                  ),
+                ),
+              ),
               _buildSection(
                 title: "Appearance",
                 subtitle: "Change how the application looks",
@@ -795,36 +1015,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         label: const Text("Edit Store Details"),
                       ),
                     ),
-                  ],
-                ),
-              ),
-              _buildSection(
-                title: "Backup Data",
-                subtitle:
-                    "Create a local backup file or restore from an existing backup",
-                child: Column(
-                  children: [
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: _isBusy ? null : _backupData,
-                        icon: const Icon(Icons.backup_outlined),
-                        label: const Text("Take Local Backup"),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _isBusy ? null : _restoreData,
-                        icon: const Icon(Icons.restore_rounded),
-                        label: const Text("Restore From Backup"),
-                      ),
-                    ),
-                    if (_isBusy) ...[
-                      const SizedBox(height: 14),
-                      const LinearProgressIndicator(),
-                    ],
                   ],
                 ),
               ),

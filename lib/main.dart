@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'app_settings_controller.dart';
+import 'screens/clock_error_screen.dart';
 import 'screens/home_screen.dart';
 
 Future<void> main() async {
@@ -32,7 +33,7 @@ class MyApp extends StatelessWidget {
           themeMode: controller.themeMode,
           theme: _buildLightTheme(),
           darkTheme: _buildDarkTheme(),
-          home: home,
+          home: ClockGuard(child: home),
         );
       },
     );
