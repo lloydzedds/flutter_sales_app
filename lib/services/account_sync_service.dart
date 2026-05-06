@@ -20,6 +20,7 @@ class AccountSyncService extends ChangeNotifier {
   static const _autoBackupFrequencyKey = 'auto_cloud_backup_frequency';
   static const _autoBackupNetworkKey = 'cloud_backup_network';
   static const _lastAutoBackupAtKey = 'last_auto_cloud_backup_at';
+  static const _localDataMoveDismissedKey = 'local_data_move_dismissed';
   static const _developmentWebClientId =
       '244833529337-7u9dh7p43iva3j5fdhad2nus2lbm9u0u.apps.googleusercontent.com';
   static const _bundledWebClientId = String.fromEnvironment(
@@ -48,6 +49,10 @@ class AccountSyncService extends ChangeNotifier {
   DateTime? get lastAutomaticBackupAt => _lastAutomaticBackupAt;
   String get dataProfileLabel => DatabaseHelper.instance.activeProfileLabel;
   String get dataProfileKey => DatabaseHelper.instance.activeProfileKey;
+  Future<bool> get hasLocalDeviceData =>
+      DatabaseHelper.instance.localProfileHasBusinessData();
+  Future<bool> get activeProfileHasData =>
+      DatabaseHelper.instance.activeProfileHasBusinessData();
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -130,6 +135,38 @@ class AccountSyncService extends ChangeNotifier {
     _account = account;
     await DatabaseHelper.instance.setActiveAccountEmail(account?.email);
     await _loadProfileConfiguration();
+  }
+
+  Future<File> moveLocalDeviceDataToSignedInAccount() async {
+    if (!isSignedIn) {
+      throw Exception('Sign in with Google first.');
+    }
+
+    _setBusy(true);
+    try {
+      final archiveFile = await DatabaseHelper.instance
+          .moveLocalDataToActiveProfile();
+      await _loadProfileConfiguration();
+      notifyListeners();
+      return archiveFile;
+    } finally {
+      _setBusy(false);
+    }
+  }
+
+  Future<bool> isLocalDataMoveDismissed() async {
+    final value = await DatabaseHelper.instance.getAppSetting(
+      _localDataMoveDismissedKey,
+    );
+    return value == 'true';
+  }
+
+  Future<void> keepLocalDeviceDataSeparate() async {
+    await DatabaseHelper.instance.saveAppSetting(
+      _localDataMoveDismissedKey,
+      'true',
+    );
+    notifyListeners();
   }
 
   Future<CloudBackupInfo?> getLatestBackupInfo() async {

@@ -84,6 +84,11 @@ class DatabaseHelper {
     );
   }
 
+  Future<String> _databasePathForName(String databaseName) async {
+    final dbPath = await getDatabasesPath();
+    return join(dbPath, databaseName);
+  }
+
   Future<void> _createDB(Database db, int version) async {
     await db.execute('''
       CREATE TABLE products(
@@ -1623,9 +1628,95 @@ class DatabaseHelper {
     _database = null;
   }
 
+  Future<bool> activeProfileHasBusinessData() async {
+    final db = await database;
+    return _databaseHasBusinessData(db);
+  }
+
+  Future<bool> localProfileHasBusinessData() async {
+    final localPath = await _databasePathForName(_localDatabaseName);
+    final localFile = File(localPath);
+    if (!await localFile.exists()) {
+      return false;
+    }
+
+    if (_activeDatabaseName == _localDatabaseName) {
+      final db = await database;
+      return _databaseHasBusinessData(db);
+    }
+
+    Database? localDb;
+    try {
+      localDb = await openDatabase(localPath, readOnly: true);
+      return _databaseHasBusinessData(localDb);
+    } finally {
+      await localDb?.close();
+    }
+  }
+
+  Future<bool> _databaseHasBusinessData(Database db) async {
+    const tables = ['products', 'sales', 'customers', 'sale_returns'];
+    for (final table in tables) {
+      final rows = await db.rawQuery(
+        'SELECT COUNT(*) AS count FROM $table LIMIT 1',
+      );
+      if (_asInt(rows.first['count']) > 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<File> moveLocalDataToActiveProfile() async {
+    if (isUsingLocalProfile) {
+      throw Exception('Sign in to a Google account before moving local data.');
+    }
+
+    final localPath = await _databasePathForName(_localDatabaseName);
+    final activePath = await _databasePathForName(_activeDatabaseName);
+    final localFile = File(localPath);
+    if (!await localFile.exists() || !await localProfileHasBusinessData()) {
+      throw Exception('No local device data was found to move.');
+    }
+
+    if (await activeProfileHasBusinessData()) {
+      throw Exception(
+        'This Google account already has app data. Restore, export, or back it up before moving local data into it.',
+      );
+    }
+
+    await closeDatabase();
+
+    final activeFile = File(activePath);
+    if (await activeFile.exists()) {
+      await activeFile.delete();
+    }
+    await localFile.copy(activePath);
+
+    final archivePath = await _uniqueArchivedLocalDatabasePath();
+    await localFile.rename(archivePath);
+
+    await database;
+    return File(archivePath);
+  }
+
+  Future<String> _uniqueArchivedLocalDatabasePath() async {
+    final directory = dirname(await _databasePathForName(_localDatabaseName));
+    final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+    var candidate = join(directory, 'sales_moved_to_account_$timestamp.db');
+    var index = 1;
+    while (await File(candidate).exists()) {
+      candidate = join(
+        directory,
+        'sales_moved_to_account_${timestamp}_$index.db',
+      );
+      index += 1;
+    }
+    return candidate;
+  }
+
   Future<String> getRawDatabasePath() async {
-    final dbPath = await getDatabasesPath();
-    return join(dbPath, _activeDatabaseName);
+    return _databasePathForName(_activeDatabaseName);
   }
 
   Future<String> getDatabasePath() async {

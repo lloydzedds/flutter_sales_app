@@ -275,6 +275,8 @@ class _AccountsAndBackupScreenState extends State<AccountsAndBackupScreen> {
 
   CloudBackupInfo? _cloudBackupInfo;
   bool _isLocalBackupBusy = false;
+  bool _canMoveLocalData = false;
+  bool _isCheckingLocalData = true;
 
   @override
   void initState() {
@@ -282,6 +284,7 @@ class _AccountsAndBackupScreenState extends State<AccountsAndBackupScreen> {
     _syncService.addListener(_handleSyncChanged);
     _loadGoogleSignInConfiguration();
     _loadCloudBackupInfo();
+    _refreshLocalMoveState();
     _runScheduledCloudBackup();
   }
 
@@ -299,6 +302,30 @@ class _AccountsAndBackupScreenState extends State<AccountsAndBackupScreen> {
 
   Future<void> _loadGoogleSignInConfiguration() async {
     await _syncService.loadConfiguration();
+  }
+
+  Future<void> _refreshLocalMoveState() async {
+    if (!_syncService.isSignedIn) {
+      if (!mounted) return;
+      setState(() {
+        _canMoveLocalData = false;
+        _isCheckingLocalData = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _isCheckingLocalData = true;
+    });
+
+    final hasLocalData = await _syncService.hasLocalDeviceData;
+    final activeHasData = await _syncService.activeProfileHasData;
+    final dismissed = await _syncService.isLocalDataMoveDismissed();
+    if (!mounted) return;
+    setState(() {
+      _canMoveLocalData = hasLocalData && !activeHasData && !dismissed;
+      _isCheckingLocalData = false;
+    });
   }
 
   Future<void> _runScheduledCloudBackup() async {
@@ -348,6 +375,7 @@ class _AccountsAndBackupScreenState extends State<AccountsAndBackupScreen> {
     try {
       await _syncService.signIn();
       await _loadCloudBackupInfo();
+      await _refreshLocalMoveState();
       await _runScheduledCloudBackup();
       if (!mounted) return;
       _showMessage("Signed in as ${_syncService.email}");
@@ -360,6 +388,7 @@ class _AccountsAndBackupScreenState extends State<AccountsAndBackupScreen> {
   Future<void> _signOutFromGoogle() async {
     await _syncService.signOut();
     await _loadCloudBackupInfo();
+    await _refreshLocalMoveState();
     if (!mounted) return;
     _showMessage("Signed out");
   }
@@ -368,8 +397,10 @@ class _AccountsAndBackupScreenState extends State<AccountsAndBackupScreen> {
     try {
       await _syncService.signOut();
       await _loadCloudBackupInfo();
+      await _refreshLocalMoveState();
       await _syncService.signIn();
       await _loadCloudBackupInfo();
+      await _refreshLocalMoveState();
       await _runScheduledCloudBackup();
       if (!mounted) return;
       _showMessage("Signed in as ${_syncService.email}");
@@ -391,6 +422,53 @@ class _AccountsAndBackupScreenState extends State<AccountsAndBackupScreen> {
       if (!mounted) return;
       _showMessage(error.toString().replaceFirst('Exception: ', ''));
     }
+  }
+
+  Future<void> _moveLocalDataToAccount() async {
+    final email = _syncService.email ?? 'this account';
+    final shouldMove = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text("Move local data?"),
+          content: Text(
+            "This will move the products, customers, bills, sales, and returns currently stored on this device into $email. The local database will be archived on this device as a recovery copy.",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text("Cancel"),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text("Move Data"),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldMove != true) return;
+
+    try {
+      final archiveFile = await _syncService
+          .moveLocalDeviceDataToSignedInAccount();
+      await AppSettingsController.instance.reload();
+      await _loadCloudBackupInfo();
+      await _refreshLocalMoveState();
+      if (!mounted) return;
+      _showMessage("Local data moved. Recovery copy: ${archiveFile.path}");
+    } catch (error) {
+      if (!mounted) return;
+      _showMessage(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Future<void> _keepLocalDataSeparate() async {
+    await _syncService.keepLocalDeviceDataSeparate();
+    await _refreshLocalMoveState();
+    if (!mounted) return;
+    _showMessage("Local device data will stay separate");
   }
 
   Future<void> _restoreFromCloud() async {
@@ -421,6 +499,7 @@ class _AccountsAndBackupScreenState extends State<AccountsAndBackupScreen> {
     try {
       final info = await _syncService.restoreLatestDatabase();
       await AppSettingsController.instance.reload();
+      await _refreshLocalMoveState();
       if (!mounted) return;
       setState(() {
         _cloudBackupInfo = info;
@@ -537,6 +616,7 @@ class _AccountsAndBackupScreenState extends State<AccountsAndBackupScreen> {
     try {
       await DatabaseHelper.instance.restoreDatabaseFromFile(selectedPath);
       await AppSettingsController.instance.reload();
+      await _refreshLocalMoveState();
 
       if (!mounted) return;
       _showMessage("Backup restored successfully");
@@ -708,6 +788,52 @@ class _AccountsAndBackupScreenState extends State<AccountsAndBackupScreen> {
               ],
             ),
           ),
+          if (signedIn && _isCheckingLocalData) ...[
+            const SizedBox(height: 12),
+            const LinearProgressIndicator(),
+          ],
+          if (signedIn && _canMoveLocalData) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.secondaryContainer,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    "Local device data found",
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    "Move existing local products, customers, bills, and sales into this Google account, keep them separate, or restore this account from Google Drive.",
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    onPressed: busy ? null : _moveLocalDataToAccount,
+                    icon: const Icon(Icons.drive_file_move_outline),
+                    label: const Text("Move Local Data"),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: busy ? null : _restoreFromCloud,
+                    icon: const Icon(Icons.cloud_download_outlined),
+                    label: const Text("Restore from Google"),
+                  ),
+                  TextButton(
+                    onPressed: busy ? null : _keepLocalDataSeparate,
+                    child: const Text("Keep Separate"),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (!hasClientId && !signedIn)
             Container(
               margin: const EdgeInsets.only(bottom: 12),
