@@ -46,6 +46,8 @@ class AccountSyncService extends ChangeNotifier {
   String get automaticBackupFrequency => _automaticBackupFrequency;
   String get cloudBackupNetwork => _cloudBackupNetwork;
   DateTime? get lastAutomaticBackupAt => _lastAutomaticBackupAt;
+  String get dataProfileLabel => DatabaseHelper.instance.activeProfileLabel;
+  String get dataProfileKey => DatabaseHelper.instance.activeProfileKey;
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -61,14 +63,20 @@ class AccountSyncService extends ChangeNotifier {
     _authSubscription = GoogleSignIn.instance.authenticationEvents.listen((
       event,
     ) {
-      switch (event) {
-        case GoogleSignInAuthenticationEventSignIn():
-          _account = event.user;
-        case GoogleSignInAuthenticationEventSignOut():
-          _account = null;
-      }
-      notifyListeners();
+      unawaited(_handleAuthenticationEvent(event));
     }, onError: (_) {});
+
+    final lightweightAuth = GoogleSignIn.instance
+        .attemptLightweightAuthentication();
+    if (lightweightAuth != null) {
+      try {
+        await _applyAccount(await lightweightAuth);
+      } catch (_) {
+        await _applyAccount(null);
+      }
+    } else {
+      await _applyAccount(null);
+    }
   }
 
   Future<void> signIn() async {
@@ -86,7 +94,8 @@ class AccountSyncService extends ChangeNotifier {
 
     _setBusy(true);
     try {
-      _account = await GoogleSignIn.instance.authenticate();
+      final account = await GoogleSignIn.instance.authenticate();
+      await _applyAccount(account);
       notifyListeners();
     } finally {
       _setBusy(false);
@@ -98,11 +107,29 @@ class AccountSyncService extends ChangeNotifier {
     _setBusy(true);
     try {
       await GoogleSignIn.instance.signOut();
-      _account = null;
+      await _applyAccount(null);
       notifyListeners();
     } finally {
       _setBusy(false);
     }
+  }
+
+  Future<void> _handleAuthenticationEvent(
+    GoogleSignInAuthenticationEvent event,
+  ) async {
+    switch (event) {
+      case GoogleSignInAuthenticationEventSignIn():
+        await _applyAccount(event.user);
+      case GoogleSignInAuthenticationEventSignOut():
+        await _applyAccount(null);
+    }
+    notifyListeners();
+  }
+
+  Future<void> _applyAccount(GoogleSignInAccount? account) async {
+    _account = account;
+    await DatabaseHelper.instance.setActiveAccountEmail(account?.email);
+    await _loadProfileConfiguration();
   }
 
   Future<CloudBackupInfo?> getLatestBackupInfo() async {
@@ -300,6 +327,11 @@ class AccountSyncService extends ChangeNotifier {
   }
 
   Future<void> loadConfiguration() async {
+    await _loadProfileConfiguration();
+    notifyListeners();
+  }
+
+  Future<void> _loadProfileConfiguration() async {
     final value = await _loadConfiguredWebClientId();
     final frequency = await DatabaseHelper.instance.getAppSetting(
       _autoBackupFrequencyKey,
@@ -314,7 +346,6 @@ class AccountSyncService extends ChangeNotifier {
     _automaticBackupFrequency = _normalizeFrequency(frequency);
     _cloudBackupNetwork = _normalizeNetwork(network);
     _lastAutomaticBackupAt = DateTime.tryParse(lastBackup ?? '');
-    notifyListeners();
   }
 
   Future<void> setAutomaticBackupFrequency(String value) async {

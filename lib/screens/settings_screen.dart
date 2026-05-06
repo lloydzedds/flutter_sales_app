@@ -676,6 +676,38 @@ class _AccountsAndBackupScreenState extends State<AccountsAndBackupScreen> {
                   )
                 : null,
           ),
+          Container(
+            margin: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primary.withAlpha(12),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  signedIn
+                      ? Icons.folder_shared_outlined
+                      : Icons.phone_android_rounded,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    signedIn
+                        ? "Active data profile: ${_syncService.dataProfileLabel}. Products, customers, bills, and sales stay separate for this account."
+                        : "Active data profile: local device data. Sign in to switch to that Google account's separate app data.",
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ],
+            ),
+          ),
           if (!hasClientId && !signedIn)
             Container(
               margin: const EdgeInsets.only(bottom: 12),

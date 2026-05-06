@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../database/database_helper.dart';
+import '../services/account_sync_service.dart';
 import 'add_product_screen.dart';
 import 'add_sale_screen.dart';
 import 'customers_screen.dart';
@@ -84,6 +85,8 @@ class _HomeScreenState extends State<HomeScreen> {
   int _selectedTab = 0;
   bool _isLoading = true;
   bool _isHeaderScrolled = false;
+  final _syncService = AccountSyncService.instance;
+  String _activeProfileKey = AccountSyncService.instance.dataProfileKey;
   final TextEditingController _inventorySearchController =
       TextEditingController();
   DateTimeRange _selectedRange = DateTimeRange(
@@ -107,16 +110,36 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _syncService.addListener(_handleAccountProfileChanged);
     loadDashboard();
   }
 
   @override
   void dispose() {
+    _syncService.removeListener(_handleAccountProfileChanged);
     _inventorySearchController.dispose();
     super.dispose();
   }
 
+  void _handleAccountProfileChanged() {
+    final nextProfileKey = _syncService.dataProfileKey;
+    if (nextProfileKey == _activeProfileKey) {
+      return;
+    }
+
+    _activeProfileKey = nextProfileKey;
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _isHeaderScrolled = false;
+      _inventorySearchController.clear();
+      _inventorySearchQuery = '';
+    });
+    loadDashboard();
+  }
+
   Future<void> loadDashboard() async {
+    final loadingProfileKey = _syncService.dataProfileKey;
     final start = DateFormat('yyyy-MM-dd').format(_selectedRange.start);
     final end = DateFormat('yyyy-MM-dd').format(_selectedRange.end);
 
@@ -133,7 +156,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final filteredSales = await filteredSalesFuture;
     final revenueData = await revenueDataFuture;
 
-    if (!mounted) return;
+    if (!mounted || loadingProfileKey != _syncService.dataProfileKey) return;
 
     setState(() {
       products = fetchedProducts;

@@ -8,17 +8,68 @@ import 'package:sqflite/sqflite.dart';
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
-  static const _databaseName = 'sales.db';
+  static const _localDatabaseName = 'sales.db';
+  static const _localProfileKey = 'local';
   static const _databaseVersion = 8;
   static const _groupKeyExpr =
       "COALESCE(sales.sale_group_id, 'legacy-' || CAST(sales.id AS TEXT))";
 
   DatabaseHelper._init();
 
+  String _activeDatabaseName = _localDatabaseName;
+  String _activeProfileKey = _localProfileKey;
+  String? _activeProfileEmail;
+
+  String get activeProfileKey => _activeProfileKey;
+
+  String get activeProfileLabel =>
+      _activeProfileEmail == null ? 'Local device data' : _activeProfileEmail!;
+
+  bool get isUsingLocalProfile => _activeProfileKey == _localProfileKey;
+
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB(_databaseName);
+    _database = await _initDB(_activeDatabaseName);
     return _database!;
+  }
+
+  Future<void> setActiveAccountEmail(String? email) async {
+    final profileKey = _profileKeyForEmail(email);
+    final databaseName = _databaseNameForProfile(profileKey);
+    if (_activeDatabaseName == databaseName) {
+      return;
+    }
+
+    await closeDatabase();
+    _activeProfileKey = profileKey;
+    _activeProfileEmail = profileKey == _localProfileKey
+        ? null
+        : email?.trim().toLowerCase();
+    _activeDatabaseName = databaseName;
+    await database;
+  }
+
+  String _profileKeyForEmail(String? email) {
+    final cleanEmail = email?.trim().toLowerCase() ?? '';
+    return cleanEmail.isEmpty ? _localProfileKey : cleanEmail;
+  }
+
+  String _databaseNameForProfile(String profileKey) {
+    if (profileKey == _localProfileKey) {
+      return _localDatabaseName;
+    }
+
+    var safeName = profileKey
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_|_$'), '');
+    if (safeName.isEmpty) {
+      safeName = 'google_user';
+    }
+    if (safeName.length > 80) {
+      safeName = safeName.substring(0, 80);
+    }
+    return 'sales_account_$safeName.db';
   }
 
   Future<Database> _initDB(String filePath) async {
@@ -1574,7 +1625,7 @@ class DatabaseHelper {
 
   Future<String> getRawDatabasePath() async {
     final dbPath = await getDatabasesPath();
-    return join(dbPath, _databaseName);
+    return join(dbPath, _activeDatabaseName);
   }
 
   Future<String> getDatabasePath() async {
