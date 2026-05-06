@@ -10,6 +10,8 @@ import '../services/sales_export_service.dart';
 import 'how_to_use_screen.dart';
 import 'store_details_screen.dart';
 
+enum _CloudRestoreChoice { backupThenReplace, replace }
+
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -275,6 +277,7 @@ class _AccountsAndBackupScreenState extends State<AccountsAndBackupScreen> {
 
   CloudBackupInfo? _cloudBackupInfo;
   bool _isLocalBackupBusy = false;
+  bool _isCloudRestoreBusy = false;
   bool _canMoveLocalData = false;
   bool _isCheckingLocalData = true;
 
@@ -471,32 +474,132 @@ class _AccountsAndBackupScreenState extends State<AccountsAndBackupScreen> {
     _showMessage("Local device data will stay separate");
   }
 
-  Future<void> _restoreFromCloud() async {
-    final shouldRestore = await showDialog<bool>(
+  Future<_CloudRestoreChoice?> _pickCloudRestoreChoice() async {
+    final activeHasData = await _syncService.activeProfileHasData;
+    if (!mounted) return null;
+
+    final email = _syncService.email ?? 'this Google account';
+    if (!activeHasData) {
+      final shouldRestore = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text("Restore cloud backup?"),
+            content: Text(
+              "This will replace the current Sale Buddy data on this device with the backup saved for $email.",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text("Cancel"),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text("Restore"),
+              ),
+            ],
+          );
+        },
+      );
+
+      return shouldRestore == true ? _CloudRestoreChoice.replace : null;
+    }
+
+    return showModalBottomSheet<_CloudRestoreChoice>(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text("Restore cloud backup?"),
-          content: Text(
-            "This will replace the local Sale Buddy data on this device with the backup saved for ${_syncService.email}.",
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetContext) {
+        final colorScheme = Theme.of(sheetContext).colorScheme;
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Restore cloud backup?",
+                  style: Theme.of(
+                    sheetContext,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  "This account already has data on this device. Choose what to do before replacing it with the Google Drive backup saved for $email.",
+                  style: Theme.of(sheetContext).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    Icons.security_update_good_outlined,
+                    color: colorScheme.primary,
+                  ),
+                  title: const Text("Back Up Then Replace"),
+                  subtitle: const Text(
+                    "Save a local recovery copy first, then restore from Google Drive.",
+                  ),
+                  onTap: () => Navigator.of(
+                    sheetContext,
+                  ).pop(_CloudRestoreChoice.backupThenReplace),
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    Icons.warning_amber_rounded,
+                    color: colorScheme.error,
+                  ),
+                  title: const Text("Replace Without Backup"),
+                  subtitle: const Text(
+                    "Use only if the current device data is no longer needed.",
+                  ),
+                  onTap: () => Navigator.of(
+                    sheetContext,
+                  ).pop(_CloudRestoreChoice.replace),
+                ),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.of(sheetContext).pop(),
+                    child: const Text("Cancel"),
+                  ),
+                ),
+              ],
+            ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text("Cancel"),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text("Restore"),
-            ),
-          ],
         );
       },
     );
+  }
 
-    if (shouldRestore != true) return;
+  Future<String> _createPreCloudRestoreBackup() async {
+    final directory = await SalesExportService.ensureLocalSaleDirectory();
+    final fileName =
+        "sale_buddy_before_cloud_restore_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.db";
+    final backupFile = await DatabaseHelper.instance.createBackup(
+      "${directory.path}/$fileName",
+    );
+    return backupFile.path;
+  }
 
+  Future<void> _restoreFromCloud() async {
+    final choice = await _pickCloudRestoreChoice();
+    if (choice == null) return;
+
+    setState(() {
+      _isCloudRestoreBusy = true;
+    });
+
+    String? recoveryPath;
     try {
+      if (choice == _CloudRestoreChoice.backupThenReplace) {
+        recoveryPath = await _createPreCloudRestoreBackup();
+      }
+
       final info = await _syncService.restoreLatestDatabase();
       await AppSettingsController.instance.reload();
       await _refreshLocalMoveState();
@@ -504,10 +607,20 @@ class _AccountsAndBackupScreenState extends State<AccountsAndBackupScreen> {
       setState(() {
         _cloudBackupInfo = info;
       });
-      _showMessage("Cloud backup restored");
+      _showMessage(
+        recoveryPath == null
+            ? "Cloud backup restored"
+            : "Cloud backup restored. Recovery copy: $recoveryPath",
+      );
     } catch (error) {
       if (!mounted) return;
       _showMessage(error.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCloudRestoreBusy = false;
+        });
+      }
     }
   }
 
@@ -708,7 +821,7 @@ class _AccountsAndBackupScreenState extends State<AccountsAndBackupScreen> {
 
   Widget _buildAccountSection() {
     final signedIn = _syncService.isSignedIn;
-    final busy = _syncService.isBusy;
+    final busy = _syncService.isBusy || _isCloudRestoreBusy;
     final hasClientId = _syncService.hasConfiguredWebClientId;
     final name = _syncService.displayName?.trim() ?? '';
     final email = _syncService.email ?? '';
