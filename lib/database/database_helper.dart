@@ -899,6 +899,7 @@ class DatabaseHelper {
           'date': returnDate,
           'reason': cleanReason.isEmpty ? null : cleanReason,
           'restocked': restock ? 1 : 0,
+          'archive_month': saleRow['archive_month']?.toString(),
         });
 
         if (restock) {

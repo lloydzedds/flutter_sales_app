@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../database/database_helper.dart';
 import '../services/sale_bill_service.dart';
+import 'record_return_screen.dart';
 
 class ArchivedSalesScreen extends StatefulWidget {
   const ArchivedSalesScreen({super.key});
@@ -211,6 +212,17 @@ class _ArchivedSalesScreenState extends State<ArchivedSalesScreen> {
     }
   }
 
+  Future<void> _recordReturn(Map<String, dynamic> order) async {
+    final recorded = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => RecordReturnScreen(order: order)),
+    );
+    if (!mounted || recorded != true) return;
+
+    await _loadArchive(month: _selectedMonth);
+    if (!mounted) return;
+    _showMessage("Return recorded for archived bill");
+  }
+
   Future<void> _showOrderDetails(Map<String, dynamic> order) async {
     final items = await _loadOrderItems(order);
     final returns = await _loadReturnRows(order);
@@ -322,6 +334,18 @@ class _ArchivedSalesScreenState extends State<ArchivedSalesScreen> {
                   }),
                 ],
                 const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () async {
+                      Navigator.of(sheetContext).pop();
+                      await _recordReturn(order);
+                    },
+                    icon: const Icon(Icons.assignment_return_outlined),
+                    label: const Text("Record Return"),
+                  ),
+                ),
+                const SizedBox(height: 10),
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
@@ -496,6 +520,11 @@ class _ArchivedSalesScreenState extends State<ArchivedSalesScreen> {
                     onPressed: _isBusy ? null : () => _shareBill(order),
                     icon: const Icon(Icons.picture_as_pdf_outlined),
                     tooltip: "Share bill",
+                  ),
+                  IconButton(
+                    onPressed: _isBusy ? null : () => _recordReturn(order),
+                    icon: const Icon(Icons.assignment_return_outlined),
+                    tooltip: "Record return",
                   ),
                 ],
               ),
