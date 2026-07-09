@@ -1552,6 +1552,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final barcode = product['barcode']?.toString().trim() ?? '';
     final isOut = stock == 0;
     final isLow = stock > 0 && stock <= 5;
+    final statusChip = isOut
+        ? const _StatusChip(label: "OUT", color: Colors.red)
+        : isLow
+        ? const _StatusChip(label: "LOW", color: Colors.orange)
+        : null;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1581,11 +1586,17 @@ class _HomeScreenState extends State<HomeScreen> {
             style: TextStyle(color: _mutedText),
           ),
         ),
-        trailing: isOut
-            ? const _StatusChip(label: "OUT", color: Colors.red)
-            : isLow
-            ? const _StatusChip(label: "LOW", color: Colors.orange)
-            : const Icon(Icons.more_horiz_rounded),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (statusChip != null) ...[statusChip, const SizedBox(width: 4)],
+            IconButton(
+              onPressed: () => _handleProductLongPress(product),
+              icon: const Icon(Icons.more_horiz_rounded),
+              tooltip: "Product actions",
+            ),
+          ],
+        ),
       ),
     );
   }
