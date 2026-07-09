@@ -4,12 +4,17 @@ import 'package:flutter/material.dart';
 
 import 'app_settings_controller.dart';
 import 'screens/clock_error_screen.dart';
-import 'screens/home_screen.dart';
+import 'screens/startup_gate.dart';
 import 'services/account_sync_service.dart';
+import 'services/onboarding_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await AccountSyncService.instance.initialize();
+  final restoreGoogleAccount =
+      await OnboardingService.shouldRestoreGoogleAccount();
+  await AccountSyncService.instance.initialize(
+    restorePreviousAccount: restoreGoogleAccount,
+  );
   await AppSettingsController.instance.load();
   runApp(MyApp(controller: AppSettingsController.instance));
 }
@@ -18,7 +23,7 @@ class MyApp extends StatelessWidget {
   const MyApp({
     super.key,
     required this.controller,
-    this.home = const HomeScreen(),
+    this.home = const StartupGate(),
   });
 
   final AppSettingsController controller;

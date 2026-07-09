@@ -14,6 +14,22 @@ save and restore the local SQLite database for the signed-in Google account.
      `CF:BD:50:02:FE:5B:33:30:4D:A1:D7:05:6D:88:33:A4:2E:91:A5:C0`
 5. Create a Web OAuth client and copy its client ID.
 
+## Add test users while the app is in testing
+
+If Google shows `Access blocked: Sale Buddy has not completed the Google
+verification process`, the selected Gmail account is not allowed to test this
+OAuth app yet.
+
+In Google Cloud Console:
+
+1. Open the Sale Buddy project.
+2. Go to Google Auth Platform > Audience.
+3. Under Test users, add every Gmail account you will use on test devices.
+4. Save the changes, wait a few minutes, then try signing in again.
+
+For public release, complete Google's OAuth verification instead of relying on
+test users.
+
 ## Add the Web client ID to the app build
 
 For local testing, the app currently includes a development Web client ID in

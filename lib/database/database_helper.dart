@@ -473,6 +473,52 @@ class DatabaseHelper {
     return result.first['value']?.toString();
   }
 
+  Future<T> _withLocalDatabase<T>(
+    Future<T> Function(Database db) action,
+  ) async {
+    if (_activeDatabaseName == _localDatabaseName) {
+      return action(await database);
+    }
+
+    Database? localDb;
+    try {
+      localDb = await openDatabase(
+        await _databasePathForName(_localDatabaseName),
+        version: _databaseVersion,
+        onCreate: _createDB,
+        onUpgrade: _upgradeDB,
+        onOpen: _handleDatabaseOpen,
+      );
+      return action(localDb);
+    } finally {
+      await localDb?.close();
+    }
+  }
+
+  Future<void> saveLocalAppSetting(String key, String value) async {
+    await _withLocalDatabase((db) {
+      return db.insert('app_settings', {
+        'key': key,
+        'value': value,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    });
+  }
+
+  Future<String?> getLocalAppSetting(String key) async {
+    return _withLocalDatabase((db) async {
+      final result = await db.query(
+        'app_settings',
+        columns: ['value'],
+        where: 'key = ?',
+        whereArgs: [key],
+        limit: 1,
+      );
+
+      if (result.isEmpty) return null;
+      return result.first['value']?.toString();
+    });
+  }
+
   Future<Map<String, String>> getStoreDetails() async {
     const keys = [
       'store_name',

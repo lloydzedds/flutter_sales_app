@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as path;
@@ -93,11 +94,23 @@ class ProductLabelService {
     final storeName = storeDetails['store_name']?.trim().isNotEmpty == true
         ? storeDetails['store_name']!.trim()
         : 'Sale Buddy';
+    final pageFormat = paperSize.pageFormat;
+    final codeWidth = math.max(24.0, pageFormat.availableWidth - 12);
+    final codeHeight = math.max(
+      18.0,
+      pageFormat.availableHeight - (includePrice ? 54 : 42),
+    );
+    final effectiveCodeHeight = codeType == ProductLabelCodeType.qr
+        ? math.min(codeWidth, codeHeight)
+        : codeHeight;
+    final effectiveCodeWidth = codeType == ProductLabelCodeType.qr
+        ? effectiveCodeHeight
+        : codeWidth;
 
     for (var index = 0; index < copies; index++) {
       document.addPage(
         pw.Page(
-          pageFormat: paperSize.pageFormat,
+          pageFormat: pageFormat,
           build: (context) {
             return pw.Container(
               decoration: pw.BoxDecoration(
@@ -136,8 +149,8 @@ class ProductLabelService {
                             : pw.Barcode.qrCode(),
                         data: barcodeValue,
                         drawText: codeType == ProductLabelCodeType.barcode,
-                        width: double.infinity,
-                        height: double.infinity,
+                        width: effectiveCodeWidth,
+                        height: effectiveCodeHeight,
                       ),
                     ),
                   ),

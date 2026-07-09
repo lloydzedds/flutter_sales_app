@@ -33,6 +33,7 @@ class AccountSyncService extends ChangeNotifier {
   bool _initialized = false;
   bool _isBusy = false;
   bool _isAccountSwitchPending = false;
+  bool _allowAuthenticationEvents = false;
   String _configuredWebClientId = '';
   String _automaticBackupFrequency = 'off';
   String _cloudBackupNetwork = 'any';
@@ -56,9 +57,10 @@ class AccountSyncService extends ChangeNotifier {
   Future<bool> get activeProfileHasData =>
       DatabaseHelper.instance.activeProfileHasBusinessData();
 
-  Future<void> initialize() async {
+  Future<void> initialize({bool restorePreviousAccount = false}) async {
     if (_initialized) return;
     _configuredWebClientId = await _loadConfiguredWebClientId();
+    _allowAuthenticationEvents = restorePreviousAccount;
 
     await GoogleSignIn.instance.initialize(
       serverClientId: _configuredWebClientId.isEmpty
@@ -73,15 +75,21 @@ class AccountSyncService extends ChangeNotifier {
       unawaited(_handleAuthenticationEvent(event));
     }, onError: (_) {});
 
+    if (!restorePreviousAccount) {
+      await _applyAccount(null);
+      return;
+    }
+
     final lightweightAuth = GoogleSignIn.instance
         .attemptLightweightAuthentication();
-    if (lightweightAuth != null) {
-      try {
-        await _applyAccount(await lightweightAuth);
-      } catch (_) {
-        await _applyAccount(null);
-      }
-    } else {
+    if (lightweightAuth == null) {
+      await _applyAccount(null);
+      return;
+    }
+
+    try {
+      await _applyAccount(await lightweightAuth);
+    } catch (_) {
       await _applyAccount(null);
     }
   }
@@ -92,6 +100,7 @@ class AccountSyncService extends ChangeNotifier {
     _setBusy(true);
     try {
       final account = await GoogleSignIn.instance.authenticate();
+      _allowAuthenticationEvents = true;
       await _applyAccount(account);
       notifyListeners();
     } finally {
@@ -109,6 +118,7 @@ class AccountSyncService extends ChangeNotifier {
 
     _setBusy(true);
     _isAccountSwitchPending = true;
+    _allowAuthenticationEvents = true;
     try {
       final selectedAccount = await GoogleSignIn.instance.authenticate();
       _pendingSwitchAccount = selectedAccount;
@@ -135,6 +145,7 @@ class AccountSyncService extends ChangeNotifier {
     try {
       _pendingSwitchAccount = null;
       _isAccountSwitchPending = false;
+      _allowAuthenticationEvents = true;
       await _applyAccount(selectedAccount);
       notifyListeners();
     } finally {
@@ -168,6 +179,7 @@ class AccountSyncService extends ChangeNotifier {
     try {
       _pendingSwitchAccount = null;
       _isAccountSwitchPending = false;
+      _allowAuthenticationEvents = false;
       await GoogleSignIn.instance.signOut();
       await _applyAccount(null);
       notifyListeners();
@@ -181,9 +193,11 @@ class AccountSyncService extends ChangeNotifier {
   ) async {
     switch (event) {
       case GoogleSignInAuthenticationEventSignIn():
+        if (!_allowAuthenticationEvents) return;
         if (_isAccountSwitchPending) return;
         await _applyAccount(event.user);
       case GoogleSignInAuthenticationEventSignOut():
+        if (!_allowAuthenticationEvents) return;
         if (_isAccountSwitchPending) return;
         await _applyAccount(null);
     }

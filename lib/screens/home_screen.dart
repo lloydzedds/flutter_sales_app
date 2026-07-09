@@ -35,6 +35,8 @@ enum _InventorySortOption {
   stockDesc,
 }
 
+enum _InventoryStockFilter { all, low, out }
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -96,6 +98,7 @@ class _HomeScreenState extends State<HomeScreen> {
   _DashboardRangePreset _selectedRangePreset = _DashboardRangePreset.last7Days;
   String _inventorySearchQuery = '';
   _InventorySortOption _inventorySortOption = _InventorySortOption.nameAsc;
+  _InventoryStockFilter _inventoryStockFilter = _InventoryStockFilter.all;
 
   List<Map<String, dynamic>> products = [];
   List<Map<String, dynamic>> recentSales = [];
@@ -134,6 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _isHeaderScrolled = false;
       _inventorySearchController.clear();
       _inventorySearchQuery = '';
+      _inventoryStockFilter = _InventoryStockFilter.all;
     });
     loadDashboard();
   }
@@ -250,6 +254,18 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> get _visibleProducts {
     final query = _inventorySearchQuery.trim().toLowerCase();
     final filtered = products.where((product) {
+      final stock = _asInt(product['stock']);
+      switch (_inventoryStockFilter) {
+        case _InventoryStockFilter.low:
+          if (stock <= 0 || stock > 5) return false;
+          break;
+        case _InventoryStockFilter.out:
+          if (stock != 0) return false;
+          break;
+        case _InventoryStockFilter.all:
+          break;
+      }
+
       if (query.isEmpty) {
         return true;
       }
@@ -407,6 +423,25 @@ class _HomeScreenState extends State<HomeScreen> {
       case _InventorySortOption.stockDesc:
         return "Stock (High to Low)";
     }
+  }
+
+  String _inventoryStockFilterLabel() {
+    switch (_inventoryStockFilter) {
+      case _InventoryStockFilter.low:
+        return "low-stock products";
+      case _InventoryStockFilter.out:
+        return "out-of-stock products";
+      case _InventoryStockFilter.all:
+        return "all products";
+    }
+  }
+
+  void _setInventoryStockFilter(_InventoryStockFilter filter) {
+    setState(() {
+      _inventoryStockFilter = filter;
+      _inventorySearchController.clear();
+      _inventorySearchQuery = '';
+    });
   }
 
   void _selectTab(int index) {
@@ -1823,27 +1858,69 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildMiniMetric({required String label, required String value}) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: _surfaceSoft,
+  Widget _buildMiniMetric({
+    required String label,
+    required String value,
+    IconData? icon,
+    Color? color,
+    bool selected = false,
+    VoidCallback? onTap,
+  }) {
+    final tone = color ?? _accent;
+
+    return Material(
+      color: selected ? tone.withAlpha(28) : _surfaceSoft,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: TextStyle(color: _mutedText)),
-          const SizedBox(height: 10),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              value,
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-            ),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: selected ? Border.all(color: tone.withAlpha(80)) : null,
           ),
-        ],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  if (icon != null) ...[
+                    Icon(icon, size: 16, color: tone),
+                    const SizedBox(width: 6),
+                  ],
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: selected ? tone : _mutedText),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                "Tap to view",
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, color: _mutedText),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -2013,6 +2090,11 @@ class _HomeScreenState extends State<HomeScreen> {
               child: _buildMiniMetric(
                 label: "Products",
                 value: "$_productCount",
+                icon: Icons.inventory_2_outlined,
+                color: _info,
+                selected: _inventoryStockFilter == _InventoryStockFilter.all,
+                onTap: () =>
+                    _setInventoryStockFilter(_InventoryStockFilter.all),
               ),
             ),
             const SizedBox(width: 12),
@@ -2020,11 +2102,24 @@ class _HomeScreenState extends State<HomeScreen> {
               child: _buildMiniMetric(
                 label: "Low Stock",
                 value: "$_lowStockCount",
+                icon: Icons.warning_amber_rounded,
+                color: _warning,
+                selected: _inventoryStockFilter == _InventoryStockFilter.low,
+                onTap: () =>
+                    _setInventoryStockFilter(_InventoryStockFilter.low),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _buildMiniMetric(label: "Out", value: "$_outOfStockCount"),
+              child: _buildMiniMetric(
+                label: "Out",
+                value: "$_outOfStockCount",
+                icon: Icons.remove_shopping_cart_outlined,
+                color: _danger,
+                selected: _inventoryStockFilter == _InventoryStockFilter.out,
+                onTap: () =>
+                    _setInventoryStockFilter(_InventoryStockFilter.out),
+              ),
             ),
           ],
         ),
@@ -2061,8 +2156,9 @@ class _HomeScreenState extends State<HomeScreen> {
       const SizedBox(height: 16),
       _buildPanel(
         title: "Products",
-        subtitle:
-            "Search, sort, and long press any product to edit or adjust stock",
+        subtitle: _inventoryStockFilter == _InventoryStockFilter.all
+            ? "Search, sort, and long press any product to edit or adjust stock"
+            : "Showing ${_inventoryStockFilterLabel()}. Tap Products above to show everything.",
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

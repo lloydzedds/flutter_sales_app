@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
 
 class StoreDetailsScreen extends StatefulWidget {
-  const StoreDetailsScreen({super.key});
+  const StoreDetailsScreen({super.key, this.isOnboarding = false});
+
+  final bool isOnboarding;
 
   @override
   State<StoreDetailsScreen> createState() => _StoreDetailsScreenState();
@@ -62,8 +64,19 @@ class _StoreDetailsScreenState extends State<StoreDetailsScreen> {
   }
 
   Future<void> _save() async {
+    final missingFields = <String>[];
     if (_storeNameController.text.trim().isEmpty) {
-      _showMessage("Store name is required");
+      missingFields.add("Store Name");
+    }
+    if (widget.isOnboarding && _phoneController.text.trim().isEmpty) {
+      missingFields.add("Phone Number");
+    }
+    if (widget.isOnboarding && _addressController.text.trim().isEmpty) {
+      missingFields.add("Store Address");
+    }
+
+    if (missingFields.isNotEmpty) {
+      _showMessage("${missingFields.join(', ')} required to save");
       return;
     }
 
@@ -109,7 +122,10 @@ class _StoreDetailsScreenState extends State<StoreDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Store Details")),
+      appBar: AppBar(
+        title: Text(widget.isOnboarding ? "Set Up Store" : "Store Details"),
+        automaticallyImplyLeading: !widget.isOnboarding,
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -125,18 +141,25 @@ class _StoreDetailsScreenState extends State<StoreDetailsScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    "These details are saved as your business identity for invoice-ready information.",
+                    widget.isOnboarding
+                        ? "Add your store identity for invoice-ready bills. You can skip now and update it later from Settings."
+                        : "These details are saved as your business identity for invoice-ready information.",
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 18),
-                  _field(controller: _storeNameController, label: "Store Name"),
+                  _field(
+                    controller: _storeNameController,
+                    label: widget.isOnboarding ? "Store Name *" : "Store Name",
+                  ),
                   _field(
                     controller: _ownerController,
                     label: "Owner / Contact Person",
                   ),
                   _field(
                     controller: _phoneController,
-                    label: "Phone Number",
+                    label: widget.isOnboarding
+                        ? "Phone Number *"
+                        : "Phone Number",
                     keyboardType: TextInputType.phone,
                   ),
                   _field(
@@ -146,7 +169,9 @@ class _StoreDetailsScreenState extends State<StoreDetailsScreen> {
                   ),
                   _field(
                     controller: _addressController,
-                    label: "Store Address",
+                    label: widget.isOnboarding
+                        ? "Store Address *"
+                        : "Store Address",
                     maxLines: 3,
                   ),
                   _field(
@@ -170,6 +195,18 @@ class _StoreDetailsScreenState extends State<StoreDetailsScreen> {
                       child: Text(_isSaving ? "Saving..." : "Save Details"),
                     ),
                   ),
+                  if (widget.isOnboarding) ...[
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton(
+                        onPressed: _isSaving
+                            ? null
+                            : () => Navigator.of(context).pop(false),
+                        child: const Text("Skip for now"),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
