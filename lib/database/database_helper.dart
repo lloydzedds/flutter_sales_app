@@ -7,7 +7,8 @@ import 'package:sqflite/sqflite.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
-  static Database? _database;
+  static final Map<String, Database> _openDatabases = {};
+  static final Map<String, Future<Database>> _openingDatabases = {};
   static const _localDatabaseName = 'sales.db';
   static const _localProfileKey = 'local';
   static const _databaseVersion = 9;
@@ -32,9 +33,27 @@ class DatabaseHelper {
   bool get isUsingLocalProfile => _activeProfileKey == _localProfileKey;
 
   Future<Database> get database async {
-    if (_database != null) return _database!;
-    _database = await _initDB(_activeDatabaseName);
-    return _database!;
+    return _databaseForName(_activeDatabaseName);
+  }
+
+  Future<Database> _databaseForName(String databaseName) async {
+    final cached = _openDatabases[databaseName];
+    if (cached != null && cached.isOpen) return cached;
+
+    final opening = _openingDatabases[databaseName];
+    if (opening != null) return opening;
+
+    final nextOpening = _initDB(databaseName).then((opened) {
+      _openDatabases[databaseName] = opened;
+      return opened;
+    });
+    _openingDatabases[databaseName] = nextOpening;
+
+    try {
+      return await nextOpening;
+    } finally {
+      _openingDatabases.remove(databaseName);
+    }
   }
 
   Future<void> setActiveAccountEmail(String? email) async {
@@ -44,7 +63,6 @@ class DatabaseHelper {
       return;
     }
 
-    await closeDatabase();
     _activeProfileKey = profileKey;
     _activeProfileEmail = profileKey == _localProfileKey
         ? null
@@ -480,19 +498,7 @@ class DatabaseHelper {
       return action(await database);
     }
 
-    Database? localDb;
-    try {
-      localDb = await openDatabase(
-        await _databasePathForName(_localDatabaseName),
-        version: _databaseVersion,
-        onCreate: _createDB,
-        onUpgrade: _upgradeDB,
-        onOpen: _handleDatabaseOpen,
-      );
-      return action(localDb);
-    } finally {
-      await localDb?.close();
-    }
+    return action(await _databaseForName(_localDatabaseName));
   }
 
   Future<void> saveLocalAppSetting(String key, String value) async {
@@ -1802,9 +1808,26 @@ class DatabaseHelper {
   }
 
   Future<void> closeDatabase() async {
-    if (_database == null) return;
-    await _database!.close();
-    _database = null;
+    await _closeDatabaseByName(_activeDatabaseName);
+  }
+
+  Future<void> _closeDatabaseByName(String databaseName) async {
+    final opening = _openingDatabases.remove(databaseName);
+    if (opening != null) {
+      try {
+        final opened = await opening;
+        if (opened.isOpen) {
+          await opened.close();
+        }
+      } finally {
+        _openDatabases.remove(databaseName);
+      }
+      return;
+    }
+
+    final db = _openDatabases.remove(databaseName);
+    if (db == null || !db.isOpen) return;
+    await db.close();
   }
 
   Future<bool> activeProfileHasBusinessData() async {
@@ -1824,13 +1847,8 @@ class DatabaseHelper {
       return _databaseHasBusinessData(db);
     }
 
-    Database? localDb;
-    try {
-      localDb = await openDatabase(localPath, readOnly: true);
-      return _databaseHasBusinessData(localDb);
-    } finally {
-      await localDb?.close();
-    }
+    final localDb = await _databaseForName(_localDatabaseName);
+    return _databaseHasBusinessData(localDb);
   }
 
   Future<bool> _databaseHasBusinessData(Database db) async {
@@ -1864,7 +1882,8 @@ class DatabaseHelper {
       );
     }
 
-    await closeDatabase();
+    await _closeDatabaseByName(_activeDatabaseName);
+    await _closeDatabaseByName(_localDatabaseName);
 
     final activeFile = File(activePath);
     if (await activeFile.exists()) {
@@ -1911,7 +1930,7 @@ class DatabaseHelper {
 
   Future<void> restoreDatabaseFromFile(String sourcePath) async {
     final destinationPath = await getRawDatabasePath();
-    await closeDatabase();
+    await _closeDatabaseByName(_activeDatabaseName);
 
     final sourceFile = File(sourcePath);
     final destinationFile = File(destinationPath);
