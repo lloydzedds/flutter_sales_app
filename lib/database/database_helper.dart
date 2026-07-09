@@ -10,9 +10,13 @@ class DatabaseHelper {
   static Database? _database;
   static const _localDatabaseName = 'sales.db';
   static const _localProfileKey = 'local';
-  static const _databaseVersion = 8;
+  static const _databaseVersion = 9;
   static const _groupKeyExpr =
       "COALESCE(sales.sale_group_id, 'legacy-' || CAST(sales.id AS TEXT))";
+  static const _activeSalesWhere =
+      "(sales.archive_month IS NULL OR TRIM(sales.archive_month) = '')";
+  static const _archivedSalesWhere =
+      "(sales.archive_month IS NOT NULL AND TRIM(sales.archive_month) != '')";
 
   DatabaseHelper._init();
 
@@ -81,6 +85,7 @@ class DatabaseHelper {
       version: _databaseVersion,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
+      onOpen: _handleDatabaseOpen,
     );
   }
 
@@ -122,7 +127,8 @@ class DatabaseHelper {
         payment_status TEXT,
         payment_method TEXT,
         amount_paid REAL,
-        due_amount REAL
+        due_amount REAL,
+        archive_month TEXT
       )
     ''');
 
@@ -157,7 +163,8 @@ class DatabaseHelper {
         selling_price REAL,
         date TEXT NOT NULL,
         reason TEXT,
-        restocked INTEGER NOT NULL DEFAULT 1
+        restocked INTEGER NOT NULL DEFAULT 1,
+        archive_month TEXT
       )
     ''');
 
@@ -254,6 +261,20 @@ class DatabaseHelper {
         'barcode': 'ALTER TABLE products ADD COLUMN barcode TEXT',
       });
     }
+
+    if (oldVersion < 9) {
+      await _ensureSalesColumns(db, {
+        'archive_month': 'ALTER TABLE sales ADD COLUMN archive_month TEXT',
+      });
+      await _ensureSaleReturnColumns(db, {
+        'archive_month':
+            'ALTER TABLE sale_returns ADD COLUMN archive_month TEXT',
+      });
+    }
+  }
+
+  Future<void> _handleDatabaseOpen(Database db) async {
+    await _archivePastMonthRows(db);
   }
 
   Future<void> _ensureSalesColumns(
@@ -288,6 +309,56 @@ class DatabaseHelper {
         await db.execute(entry.value);
       }
     }
+  }
+
+  Future<void> _ensureSaleReturnColumns(
+    Database db,
+    Map<String, String> columnStatements,
+  ) async {
+    final columns = await db.rawQuery("PRAGMA table_info(sale_returns)");
+    final names = columns
+        .map((column) => column['name'] as String?)
+        .whereType<String>()
+        .toSet();
+
+    for (final entry in columnStatements.entries) {
+      if (!names.contains(entry.key)) {
+        await db.execute(entry.value);
+      }
+    }
+  }
+
+  Future<int> _archivePastMonthRows(Database db) async {
+    final now = DateTime.now();
+    final currentMonthStart = DateFormat(
+      'yyyy-MM-dd HH:mm',
+    ).format(DateTime(now.year, now.month));
+    final salesCount = await db.rawUpdate(
+      '''
+      UPDATE sales
+      SET archive_month = SUBSTR(date, 1, 7)
+      WHERE $_activeSalesWhere
+        AND date < ?
+    ''',
+      [currentMonthStart],
+    );
+
+    await db.rawUpdate(
+      '''
+      UPDATE sale_returns
+      SET archive_month = SUBSTR(date, 1, 7)
+      WHERE (archive_month IS NULL OR TRIM(archive_month) = '')
+        AND date < ?
+    ''',
+      [currentMonthStart],
+    );
+
+    return salesCount;
+  }
+
+  Future<int> archivePastMonthRows() async {
+    final db = await database;
+    return _archivePastMonthRows(db);
   }
 
   int _asInt(dynamic value) {
@@ -1178,6 +1249,7 @@ class DatabaseHelper {
           )
         ) AS amount_paid,
         COALESCE(sales.due_amount, 0) AS due_amount,
+        COALESCE(NULLIF(TRIM(sales.archive_month), ''), '') AS archive_month,
         $_grossLineProfitExpr AS gross_profit,
         $_grossLineProfitExpr - COALESCE(return_line_agg.returned_profit_adjustment, 0) AS profit,
         COALESCE(return_line_agg.returned_profit_adjustment, 0) AS returned_profit_adjustment
@@ -1193,6 +1265,7 @@ class DatabaseHelper {
     final db = await instance.database;
     return db.rawQuery('''
       $_salesLineItemSelect
+      WHERE $_activeSalesWhere
       ORDER BY sales.date DESC, sales.id DESC
     ''');
   }
@@ -1205,7 +1278,8 @@ class DatabaseHelper {
     return db.rawQuery(
       '''
       $_salesLineItemSelect
-      WHERE sales.date BETWEEN ? AND ?
+      WHERE $_activeSalesWhere
+        AND sales.date BETWEEN ? AND ?
       ORDER BY sales.date DESC, sales.id DESC
     ''',
       [startDate, endDate],
@@ -1218,8 +1292,8 @@ class DatabaseHelper {
   }) async {
     final db = await instance.database;
     final whereClause = startDate != null && endDate != null
-        ? 'WHERE sales.date BETWEEN ? AND ?'
-        : '';
+        ? 'WHERE $_activeSalesWhere AND sales.date BETWEEN ? AND ?'
+        : 'WHERE $_activeSalesWhere';
     final args = startDate != null && endDate != null
         ? [startDate, endDate]
         : const <Object?>[];
@@ -1254,6 +1328,7 @@ class DatabaseHelper {
         COALESCE(NULLIF(TRIM(MAX(sales.payment_method)), ''), 'Cash') AS payment_method,
         COALESCE(MAX(sales.amount_paid), SUM(sales.total)) AS amount_paid,
         COALESCE(MAX(sales.due_amount), 0) AS due_amount,
+        COALESCE(NULLIF(TRIM(MAX(sales.archive_month)), ''), '') AS archive_month,
         MAX(sales.date) AS date,
         COUNT(*) AS item_count,
         SUM(sales.units) AS gross_units,
@@ -1288,6 +1363,7 @@ class DatabaseHelper {
     final db = await instance.database;
     return db.rawQuery('''
       $_saleOrderSelect
+      WHERE $_activeSalesWhere
       GROUP BY $_groupKeyExpr
       ORDER BY MAX(sales.date) DESC, MIN(sales.id) DESC
     ''');
@@ -1301,12 +1377,64 @@ class DatabaseHelper {
     return db.rawQuery(
       '''
       $_saleOrderSelect
-      WHERE sales.date BETWEEN ? AND ?
+      WHERE $_activeSalesWhere
+        AND sales.date BETWEEN ? AND ?
       GROUP BY $_groupKeyExpr
       ORDER BY MAX(sales.date) DESC, MIN(sales.id) DESC
     ''',
       [startDate, endDate],
     );
+  }
+
+  Future<List<Map<String, dynamic>>> getArchivedMonthSummaries() async {
+    final db = await instance.database;
+    return db.rawQuery('''
+      SELECT
+        sales.archive_month,
+        COUNT(DISTINCT $_groupKeyExpr) AS orders_count,
+        MIN(sales.date) AS first_sale_date,
+        MAX(sales.date) AS last_sale_date,
+        SUM(sales.total) AS gross_total,
+        SUM(COALESCE(return_line_agg.returned_total, 0)) AS returned_total,
+        SUM(
+          CASE
+            WHEN sales.total > COALESCE(return_line_agg.returned_total, 0)
+            THEN sales.total - COALESCE(return_line_agg.returned_total, 0)
+            ELSE 0
+          END
+        ) AS total,
+        SUM(
+          $_grossLineProfitExpr -
+          COALESCE(return_line_agg.returned_profit_adjustment, 0)
+        ) AS profit
+      FROM sales
+      LEFT JOIN products
+        ON sales.product_id = products.id
+      $_lineReturnJoin
+      WHERE $_archivedSalesWhere
+      GROUP BY sales.archive_month
+      ORDER BY sales.archive_month DESC
+    ''');
+  }
+
+  Future<List<Map<String, dynamic>>> getArchivedSaleOrders({
+    String? archiveMonth,
+  }) async {
+    final db = await instance.database;
+    final cleanArchiveMonth = _trim(archiveMonth);
+    final whereClause = cleanArchiveMonth.isEmpty
+        ? _archivedSalesWhere
+        : '$_archivedSalesWhere AND sales.archive_month = ?';
+    final args = cleanArchiveMonth.isEmpty
+        ? const <Object?>[]
+        : <Object?>[cleanArchiveMonth];
+
+    return db.rawQuery('''
+      $_saleOrderSelect
+      WHERE $whereClause
+      GROUP BY $_groupKeyExpr
+      ORDER BY MAX(sales.date) DESC, MIN(sales.id) DESC
+    ''', args);
   }
 
   Future<Map<String, dynamic>?> getSaleOrderByGroupKey(String groupKey) async {
@@ -1449,7 +1577,8 @@ class DatabaseHelper {
       LEFT JOIN products
         ON sales.product_id = products.id
       $_lineReturnJoin
-      WHERE sales.date LIKE ?
+      WHERE $_activeSalesWhere
+        AND sales.date LIKE ?
     ''',
       ['$todayString%'],
     );
@@ -1471,6 +1600,7 @@ class DatabaseHelper {
         ) AS revenue
       FROM sales
       $_lineReturnJoin
+      WHERE $_activeSalesWhere
       GROUP BY day
       ORDER BY day
     ''');
@@ -1508,6 +1638,7 @@ class DatabaseHelper {
       FROM customers
       LEFT JOIN sales
         ON sales.customer_id = customers.id
+        AND $_activeSalesWhere
       LEFT JOIN (
         SELECT
           sale_id,
@@ -1614,7 +1745,8 @@ class DatabaseHelper {
     return db.rawQuery(
       '''
       $_saleOrderSelect
-      WHERE sales.customer_id = ?
+      WHERE $_activeSalesWhere
+        AND sales.customer_id = ?
       GROUP BY $_groupKeyExpr
       ORDER BY MAX(sales.date) DESC, MIN(sales.id) DESC
     ''',

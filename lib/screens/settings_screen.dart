@@ -12,6 +12,8 @@ import 'store_details_screen.dart';
 
 enum _CloudRestoreChoice { backupThenReplace, replace }
 
+enum _AccountSwitchAction { switchOnly, restoreFromCloud }
+
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -396,18 +398,172 @@ class _AccountsAndBackupScreenState extends State<AccountsAndBackupScreen> {
     _showMessage("Signed out");
   }
 
+  Widget _buildAccountSwitchTile({
+    required BuildContext context,
+    required String label,
+    required GoogleAccountProfile account,
+  }) {
+    final theme = Theme.of(context);
+    final photoUrl = account.photoUrl;
+
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: CircleAvatar(
+        backgroundColor: theme.colorScheme.primaryContainer,
+        backgroundImage: photoUrl == null ? null : NetworkImage(photoUrl),
+        child: photoUrl == null
+            ? const Icon(Icons.account_circle_outlined)
+            : null,
+      ),
+      title: Text(
+        label,
+        style: theme.textTheme.labelMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            account.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          Text(account.email, maxLines: 1, overflow: TextOverflow.ellipsis),
+        ],
+      ),
+    );
+  }
+
+  Future<_AccountSwitchAction?> _pickAccountSwitchAction(
+    AccountSwitchPreview preview,
+  ) {
+    return showModalBottomSheet<_AccountSwitchAction>(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetContext) {
+        final theme = Theme.of(sheetContext);
+        final colorScheme = theme.colorScheme;
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Switch Google account?",
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  "Sale Buddy will show the products, customers, bills, and sales saved for the selected account. The current account data stays separate.",
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 12),
+                _buildAccountSwitchTile(
+                  context: sheetContext,
+                  label: "Current account",
+                  account: preview.current,
+                ),
+                const Divider(height: 20),
+                _buildAccountSwitchTile(
+                  context: sheetContext,
+                  label: "Selected account",
+                  account: preview.selected,
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    Icons.swap_horiz_rounded,
+                    color: colorScheme.primary,
+                  ),
+                  title: const Text("Switch Account"),
+                  subtitle: const Text(
+                    "Open this account's separate local Sale Buddy data.",
+                  ),
+                  onTap: () => Navigator.of(
+                    sheetContext,
+                  ).pop(_AccountSwitchAction.switchOnly),
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    Icons.cloud_download_outlined,
+                    color: colorScheme.primary,
+                  ),
+                  title: const Text("Switch and Restore from Cloud"),
+                  subtitle: const Text(
+                    "Switch accounts, then restore this account's Google Drive backup.",
+                  ),
+                  onTap: () => Navigator.of(
+                    sheetContext,
+                  ).pop(_AccountSwitchAction.restoreFromCloud),
+                ),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.of(sheetContext).pop(),
+                    child: const Text("Cancel"),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _changeGoogleAccount() async {
     try {
-      await _syncService.signOut();
+      final preview = await _syncService.prepareAccountSwitch();
+      if (!mounted) {
+        await _syncService.cancelPreparedAccountSwitch();
+        return;
+      }
+
+      if (preview.isSameAccount) {
+        await _syncService.confirmPreparedAccountSwitch();
+        await _loadCloudBackupInfo();
+        await _refreshLocalMoveState();
+        if (!mounted) return;
+        _showMessage("${preview.selected.email} is already active");
+        return;
+      }
+
+      final action = await _pickAccountSwitchAction(preview);
+      if (action == null) {
+        await _syncService.cancelPreparedAccountSwitch();
+        if (!mounted) return;
+        _showMessage("Account switch canceled");
+        return;
+      }
+
+      await _syncService.confirmPreparedAccountSwitch();
+      await AppSettingsController.instance.reload();
       await _loadCloudBackupInfo();
       await _refreshLocalMoveState();
-      await _syncService.signIn();
-      await _loadCloudBackupInfo();
-      await _refreshLocalMoveState();
-      await _runScheduledCloudBackup();
       if (!mounted) return;
-      _showMessage("Signed in as ${_syncService.email}");
+
+      if (action == _AccountSwitchAction.restoreFromCloud) {
+        await _restoreFromCloud();
+        return;
+      }
+
+      _showMessage("Switched to ${_syncService.email}");
     } catch (error) {
+      await _syncService.cancelPreparedAccountSwitch();
       if (!mounted) return;
       _showMessage(error.toString().replaceFirst('Exception: ', ''));
     }

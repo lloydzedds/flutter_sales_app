@@ -10,6 +10,7 @@ import '../database/database_helper.dart';
 import '../services/sale_bill_service.dart';
 import '../services/sales_export_service.dart';
 import 'add_sale_screen.dart';
+import 'archived_sales_screen.dart';
 import 'bill_search_screen.dart';
 import 'record_return_screen.dart';
 
@@ -511,6 +512,12 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     await Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const BillSearchScreen()));
+  }
+
+  Future<void> _openArchivedBills() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const ArchivedSalesScreen()));
   }
 
   Future<_CsvExportScope?> _pickExportScope() async {
@@ -1450,6 +1457,11 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
         onPressed: _openBillSearch,
         icon: Icons.manage_search_rounded,
         label: "Search Bills",
+      ),
+      _buildToolButton(
+        onPressed: _openArchivedBills,
+        icon: Icons.inventory_2_outlined,
+        label: "Archived Bills",
       ),
       _buildToolButton(
         onPressed: exportToCSV,

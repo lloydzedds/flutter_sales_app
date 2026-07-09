@@ -28,9 +28,11 @@ class AccountSyncService extends ChangeNotifier {
   );
 
   GoogleSignInAccount? _account;
+  GoogleSignInAccount? _pendingSwitchAccount;
   StreamSubscription<GoogleSignInAuthenticationEvent>? _authSubscription;
   bool _initialized = false;
   bool _isBusy = false;
+  bool _isAccountSwitchPending = false;
   String _configuredWebClientId = '';
   String _automaticBackupFrequency = 'off';
   String _cloudBackupNetwork = 'any';
@@ -85,17 +87,7 @@ class AccountSyncService extends ChangeNotifier {
   }
 
   Future<void> signIn() async {
-    _configuredWebClientId = await _loadConfiguredWebClientId();
-    if (_configuredWebClientId.isEmpty) {
-      throw Exception(
-        'Google sign-in is not configured for this build. Add GOOGLE_WEB_CLIENT_ID when running or building the app.',
-      );
-    }
-
-    await initialize();
-    if (!GoogleSignIn.instance.supportsAuthenticate()) {
-      throw Exception('Google sign-in is not supported on this platform.');
-    }
+    await _ensureInteractiveSignInReady();
 
     _setBusy(true);
     try {
@@ -107,10 +99,75 @@ class AccountSyncService extends ChangeNotifier {
     }
   }
 
+  Future<AccountSwitchPreview> prepareAccountSwitch() async {
+    final current = _account;
+    if (current == null) {
+      throw Exception('Sign in with Google first.');
+    }
+
+    await _ensureInteractiveSignInReady();
+
+    _setBusy(true);
+    _isAccountSwitchPending = true;
+    try {
+      final selectedAccount = await GoogleSignIn.instance.authenticate();
+      _pendingSwitchAccount = selectedAccount;
+      return AccountSwitchPreview(
+        current: GoogleAccountProfile.fromAccount(current),
+        selected: GoogleAccountProfile.fromAccount(selectedAccount),
+      );
+    } catch (_) {
+      _pendingSwitchAccount = null;
+      _isAccountSwitchPending = false;
+      rethrow;
+    } finally {
+      _setBusy(false);
+    }
+  }
+
+  Future<void> confirmPreparedAccountSwitch() async {
+    final selectedAccount = _pendingSwitchAccount;
+    if (selectedAccount == null) {
+      throw Exception('No Google account switch is waiting for confirmation.');
+    }
+
+    _setBusy(true);
+    try {
+      _pendingSwitchAccount = null;
+      _isAccountSwitchPending = false;
+      await _applyAccount(selectedAccount);
+      notifyListeners();
+    } finally {
+      _setBusy(false);
+    }
+  }
+
+  Future<void> cancelPreparedAccountSwitch() async {
+    _pendingSwitchAccount = null;
+    _isAccountSwitchPending = false;
+    notifyListeners();
+  }
+
+  Future<void> _ensureInteractiveSignInReady() async {
+    _configuredWebClientId = await _loadConfiguredWebClientId();
+    if (_configuredWebClientId.isEmpty) {
+      throw Exception(
+        'Google sign-in is not configured for this build. Add GOOGLE_WEB_CLIENT_ID when running or building the app.',
+      );
+    }
+
+    await initialize();
+    if (!GoogleSignIn.instance.supportsAuthenticate()) {
+      throw Exception('Google sign-in is not supported on this platform.');
+    }
+  }
+
   Future<void> signOut() async {
     await initialize();
     _setBusy(true);
     try {
+      _pendingSwitchAccount = null;
+      _isAccountSwitchPending = false;
       await GoogleSignIn.instance.signOut();
       await _applyAccount(null);
       notifyListeners();
@@ -124,8 +181,10 @@ class AccountSyncService extends ChangeNotifier {
   ) async {
     switch (event) {
       case GoogleSignInAuthenticationEventSignIn():
+        if (_isAccountSwitchPending) return;
         await _applyAccount(event.user);
       case GoogleSignInAuthenticationEventSignOut():
+        if (_isAccountSwitchPending) return;
         await _applyAccount(null);
     }
     notifyListeners();
@@ -498,6 +557,41 @@ class CloudBackupInfo {
   final String fileId;
   final DateTime? modifiedTime;
   final int? sizeBytes;
+}
+
+class AccountSwitchPreview {
+  const AccountSwitchPreview({required this.current, required this.selected});
+
+  final GoogleAccountProfile current;
+  final GoogleAccountProfile selected;
+
+  bool get isSameAccount =>
+      current.email.trim().toLowerCase() == selected.email.trim().toLowerCase();
+}
+
+class GoogleAccountProfile {
+  const GoogleAccountProfile({
+    required this.email,
+    this.displayName,
+    this.photoUrl,
+  });
+
+  factory GoogleAccountProfile.fromAccount(GoogleSignInAccount account) {
+    return GoogleAccountProfile(
+      email: account.email,
+      displayName: account.displayName,
+      photoUrl: account.photoUrl,
+    );
+  }
+
+  final String email;
+  final String? displayName;
+  final String? photoUrl;
+
+  String get title {
+    final trimmedName = displayName?.trim() ?? '';
+    return trimmedName.isEmpty ? email : trimmedName;
+  }
 }
 
 class _GoogleAuthClient extends http.BaseClient {
