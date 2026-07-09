@@ -30,6 +30,40 @@ In Google Cloud Console:
 For public release, complete Google's OAuth verification instead of relying on
 test users.
 
+## Production readiness checklist
+
+There is no Google PIN to add to the app. Public login depends on the Google
+Cloud OAuth consent screen, OAuth clients, scopes, and app verification status.
+
+Before moving to production:
+
+1. Use a real Android package name instead of the default example package.
+2. Create the release Android OAuth client with the production package name and
+   the SHA-1 from the release or Google Play app signing certificate.
+3. Keep the Web OAuth client ID and pass it with `GOOGLE_WEB_CLIENT_ID` for
+   release builds.
+4. Keep the requested scope limited to Google Drive app data unless a new
+   feature truly needs broader access.
+5. Publish a public app home page, privacy policy page, and terms page on a
+   domain you own.
+6. Verify that domain in Google Search Console and add it to the OAuth consent
+   screen authorized domains.
+7. Fill in Branding, Audience, Data access, and developer contact details in
+   Google Auth Platform.
+8. Submit the app for Google OAuth verification if the console requires it.
+9. After approval, change the OAuth publishing status from Testing to
+   Production so users outside the test list can sign in.
+
+For Google review, prepare:
+
+- App name and app logo.
+- Support email and developer contact email.
+- Public home page URL.
+- Public privacy policy URL.
+- Public terms URL.
+- Short explanation of why Sale Buddy needs Google Drive app data access.
+- A test account or review instructions if Google asks for app access.
+
 ## Add the Web client ID to the app build
 
 For local testing, the app currently includes a development Web client ID in

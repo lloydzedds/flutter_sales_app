@@ -6,8 +6,10 @@ import 'package:share_plus/share_plus.dart';
 import '../app_settings_controller.dart';
 import '../database/database_helper.dart';
 import '../services/account_sync_service.dart';
+import '../services/onboarding_service.dart';
 import '../services/sales_export_service.dart';
 import 'how_to_use_screen.dart';
+import 'legal_consent.dart';
 import 'store_details_screen.dart';
 
 enum _CloudRestoreChoice { backupThenReplace, replace }
@@ -376,8 +378,29 @@ class _AccountsAndBackupScreenState extends State<AccountsAndBackupScreen> {
     return DateFormat('MMM d, yyyy h:mm a').format(value.toLocal());
   }
 
+  Future<bool> _ensureLegalAcceptance() async {
+    if (await OnboardingService.hasAcceptedLegalTerms()) {
+      return true;
+    }
+
+    if (!mounted) return false;
+    final accepted = await showLegalConsentSheet(context);
+    if (!accepted) return false;
+
+    await OnboardingService.acceptLegalTerms();
+    return true;
+  }
+
   Future<void> _signInWithGoogle() async {
     try {
+      final accepted = await _ensureLegalAcceptance();
+      if (!accepted) {
+        if (mounted) {
+          _showMessage("Accept the terms before signing in.");
+        }
+        return;
+      }
+
       await _syncService.signIn();
       await _loadCloudBackupInfo();
       await _refreshLocalMoveState();

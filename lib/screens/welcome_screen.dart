@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../app_settings_controller.dart';
 import '../services/account_sync_service.dart';
 import '../services/onboarding_service.dart';
+import 'legal_consent.dart';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key, required this.onFinished});
@@ -16,6 +17,21 @@ class WelcomeScreen extends StatefulWidget {
 class _WelcomeScreenState extends State<WelcomeScreen> {
   final _syncService = AccountSyncService.instance;
   bool _isBusy = false;
+  bool _legalAccepted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLegalAcceptance();
+  }
+
+  Future<void> _loadLegalAcceptance() async {
+    final accepted = await OnboardingService.hasAcceptedLegalTerms();
+    if (!mounted) return;
+    setState(() {
+      _legalAccepted = accepted;
+    });
+  }
 
   void _showMessage(String message) {
     ScaffoldMessenger.of(
@@ -24,12 +40,18 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   }
 
   Future<void> _continueWithGoogle() async {
+    if (!_legalAccepted) {
+      _showMessage("Accept the terms before signing in.");
+      return;
+    }
+
     setState(() {
       _isBusy = true;
     });
 
     try {
       await _syncService.signIn();
+      await OnboardingService.acceptLegalTerms();
       await OnboardingService.completeWithGoogle();
       await AppSettingsController.instance.reload();
       if (!mounted) return;
@@ -47,6 +69,11 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   }
 
   Future<void> _continueLocally() async {
+    if (!_legalAccepted) {
+      _showMessage("Accept the terms before continuing.");
+      return;
+    }
+
     setState(() {
       _isBusy = true;
     });
@@ -55,6 +82,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       if (_syncService.isSignedIn) {
         await _syncService.signOut();
       }
+      await OnboardingService.acceptLegalTerms();
       await OnboardingService.completeWithoutAccount();
       await AppSettingsController.instance.reload();
       if (!mounted) return;
@@ -178,8 +206,19 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     const SizedBox(height: 18),
+                    LegalConsentCard(
+                      accepted: _legalAccepted,
+                      onChanged: (value) {
+                        setState(() {
+                          _legalAccepted = value;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 18),
                     ElevatedButton.icon(
-                      onPressed: _isBusy ? null : _continueWithGoogle,
+                      onPressed: _isBusy || !_legalAccepted
+                          ? null
+                          : _continueWithGoogle,
                       icon: const Icon(Icons.login_rounded),
                       label: Text(
                         _isBusy
@@ -189,7 +228,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                     ),
                     const SizedBox(height: 12),
                     OutlinedButton.icon(
-                      onPressed: _isBusy ? null : _continueLocally,
+                      onPressed: _isBusy || !_legalAccepted
+                          ? null
+                          : _continueLocally,
                       icon: const Icon(Icons.phone_android_rounded),
                       label: const Text("Continue without account"),
                     ),

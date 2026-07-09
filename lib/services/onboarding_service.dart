@@ -6,6 +6,9 @@ class OnboardingService {
   static const _completedKey = 'onboarding_completed';
   static const _accountModeKey = 'onboarding_account_mode';
   static const _storeSetupKey = 'onboarding_store_setup_done';
+  static const legalAcceptanceVersion = '2026-07-09';
+  static const _legalAcceptedVersionKey = 'legal_accepted_version';
+  static const _legalAcceptedAtKey = 'legal_accepted_at';
 
   static Future<bool> isOnboardingComplete() async {
     final value = await DatabaseHelper.instance.getLocalAppSetting(
@@ -34,6 +37,24 @@ class OnboardingService {
   static Future<void> completeWithoutAccount() async {
     await DatabaseHelper.instance.saveLocalAppSetting(_completedKey, 'true');
     await DatabaseHelper.instance.saveLocalAppSetting(_accountModeKey, 'local');
+  }
+
+  static Future<bool> hasAcceptedLegalTerms() async {
+    final value = await DatabaseHelper.instance.getLocalAppSetting(
+      _legalAcceptedVersionKey,
+    );
+    return value == legalAcceptanceVersion;
+  }
+
+  static Future<void> acceptLegalTerms() async {
+    await DatabaseHelper.instance.saveLocalAppSetting(
+      _legalAcceptedVersionKey,
+      legalAcceptanceVersion,
+    );
+    await DatabaseHelper.instance.saveLocalAppSetting(
+      _legalAcceptedAtKey,
+      DateTime.now().toIso8601String(),
+    );
   }
 
   static Future<bool> isStoreSetupComplete() async {
