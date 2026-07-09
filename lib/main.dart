@@ -44,7 +44,13 @@ class MyApp extends StatelessWidget {
                   maxScaleFactor: 1.14,
                 ),
               ),
-              child: child ?? const SizedBox.shrink(),
+              child: SafeArea(
+                top: false,
+                left: false,
+                right: false,
+                bottom: true,
+                child: child ?? const SizedBox.shrink(),
+              ),
             );
           },
           home: ClockGuard(child: home),
