@@ -677,17 +677,17 @@ class _HomeScreenState extends State<HomeScreen> {
   String _currentTabTitle() {
     switch (_selectedTab) {
       case 0:
-        return "Dashboard";
+        return "Home";
       case 1:
         return "Sales";
       case 2:
         return "Inventory";
       case 3:
-        return "Accounts";
-      case 4:
         return "Reports";
+      case 4:
+        return "Accounts";
       default:
-        return "Dashboard";
+        return "Home";
     }
   }
 
@@ -700,9 +700,9 @@ class _HomeScreenState extends State<HomeScreen> {
       case 2:
         return "Manage products and quick stock edits";
       case 3:
-        return "Account, backup, and app data controls";
-      case 4:
         return "Range based performance for sales and revenue";
+      case 4:
+        return "Account, backup, and app data controls";
       default:
         return "A sales cockpit for your daily business";
     }
@@ -1875,9 +1875,9 @@ class _HomeScreenState extends State<HomeScreen> {
       case 2:
         return _buildInventoryTab();
       case 3:
-        return _buildAccountsTab();
-      case 4:
         return _buildReportsTab();
+      case 4:
+        return _buildAccountsTab();
       default:
         return _buildDashboardTab();
     }
@@ -1911,7 +1911,7 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Icons.receipt_long_rounded,
             accentColor: _info,
             actionLabel: "Open reports",
-            onTap: () => _selectTab(4),
+            onTap: () => _selectTab(3),
           ),
           _buildProfitMetricCard(),
           _buildProductsMetricCard(
@@ -2189,7 +2189,7 @@ class _HomeScreenState extends State<HomeScreen> {
           NavigationDestination(
             icon: _navIcon(Icons.home_outlined, 0),
             selectedIcon: _navIcon(Icons.home_rounded, 0),
-            label: "Dashboard",
+            label: "Home",
           ),
           NavigationDestination(
             icon: _navIcon(Icons.shopping_cart_outlined, 1),
@@ -2202,14 +2202,14 @@ class _HomeScreenState extends State<HomeScreen> {
             label: "Inventory",
           ),
           NavigationDestination(
-            icon: _navIcon(Icons.account_circle_outlined, 3),
-            selectedIcon: _navIcon(Icons.account_circle_rounded, 3),
-            label: "Accounts",
+            icon: _navIcon(Icons.bar_chart_outlined, 3),
+            selectedIcon: _navIcon(Icons.bar_chart_rounded, 3),
+            label: "Reports",
           ),
           NavigationDestination(
-            icon: _navIcon(Icons.bar_chart_outlined, 4),
-            selectedIcon: _navIcon(Icons.bar_chart_rounded, 4),
-            label: "Reports",
+            icon: _navIcon(Icons.account_circle_outlined, 4),
+            selectedIcon: _navIcon(Icons.account_circle_rounded, 4),
+            label: "Accounts",
           ),
         ],
       ),
