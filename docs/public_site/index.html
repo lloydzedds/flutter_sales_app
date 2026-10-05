@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sale Buddy</title>
+  <meta name="description" content="Sale Buddy is a sales, inventory, billing, and backup app for small shops.">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f8fb;
+      --ink: #13232f;
+      --muted: #536473;
+      --card: #ffffff;
+      --line: #d9e1e8;
+      --primary: #19b8a5;
+      --accent: #f3a51b;
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.6;
+    }
+    header, main, footer {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+    .hero {
+      padding-top: 52px;
+      display: grid;
+      gap: 24px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-weight: 800;
+      font-size: 24px;
+    }
+    .logo {
+      width: 58px;
+      height: 58px;
+      border-radius: 14px;
+    }
+    h1 {
+      margin: 0;
+      max-width: 760px;
+      font-size: clamp(34px, 6vw, 64px);
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+    h2 {
+      margin-top: 0;
+      font-size: 28px;
+    }
+    p {
+      color: var(--muted);
+      font-size: 18px;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 8px;
+    }
+    a.button {
+      display: inline-block;
+      padding: 12px 18px;
+      border-radius: 8px;
+      background: var(--primary);
+      color: #ffffff;
+      text-decoration: none;
+      font-weight: 800;
+    }
+    a.link {
+      display: inline-block;
+      padding: 12px 18px;
+      color: var(--ink);
+      text-decoration: none;
+      font-weight: 800;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-top: 28px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 22px;
+    }
+    .card strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 18px;
+    }
+    footer {
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 14px;
+    }
+    footer a {
+      color: var(--ink);
+      margin-right: 14px;
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="brand">
+      <img class="logo" src="../../assets/branding/sale_buddy_icon.png" alt="Sale Buddy app icon">
+      <span>Sale Buddy</span>
+    </div>
+    <h1>Sales, stock, bills, customers, and backups for small shops.</h1>
+    <p>
+      Sale Buddy helps store owners record products, track inventory, create
+      bills, review sales history, manage returns, and keep optional Google
+      Drive app-data backups tied to the user's Google account.
+    </p>
+    <div class="actions">
+      <a class="button" href="privacy-policy.html">Privacy Policy</a>
+      <a class="link" href="terms.html">Terms of Service</a>
+    </div>
+  </header>
+  <main>
+    <section class="grid" aria-label="Sale Buddy features">
+      <div class="card">
+        <strong>Inventory</strong>
+        Track products, prices, stock levels, low stock, and out-of-stock items.
+      </div>
+      <div class="card">
+        <strong>Sales and Bills</strong>
+        Record sales, customer details, payment status, returns, and bill history.
+      </div>
+      <div class="card">
+        <strong>Backups</strong>
+        Use local backups or optional Google Drive app data backups for the
+        signed-in Google account.
+      </div>
+    </section>
+    <section class="card" style="margin-top: 24px;">
+      <h2>Google Drive app data use</h2>
+      <p>
+        Sale Buddy requests Google Drive app data access only for its own hidden
+        backup file. It does not access the user's normal Google Drive files.
+        Users can use Sale Buddy without a Google account and keep data local to
+        the device.
+      </p>
+    </section>
+  </main>
+  <footer>
+    <a href="privacy-policy.html">Privacy Policy</a>
+    <a href="terms.html">Terms of Service</a>
+    <span>Contact: lloydzeddsss@gmail.com</span>
+  </footer>
+</body>
+</html>

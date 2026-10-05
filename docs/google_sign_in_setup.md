@@ -64,6 +64,32 @@ For Google review, prepare:
 - Short explanation of why Sale Buddy needs Google Drive app data access.
 - A test account or review instructions if Google asks for app access.
 
+A ready-to-fill review packet is available at
+`docs/google_review/google_review_packet.md`. Draft public pages are available
+in `docs/public_site/`.
+
+Current owner details:
+
+- Support email: `lloydzeddsss@gmail.com`
+- Developer contact email: `lloydzedds@gmail.com`
+- Planned public domain: `salebuddy.com`
+
+Good production package name examples:
+
+- `com.salebuddy.app` if you own and verify `salebuddy.com`
+- `com.salebuddy.sales`
+- `com.salebuddy.pos`
+- `com.lloydzedds.salebuddy`
+
+To get the production SHA-1 from Google Play, create the app in Play Console,
+enable Play App Signing, then open Test and release > Setup > App integrity and
+copy the SHA-1 under App signing key certificate. For a local release keystore,
+run:
+
+```powershell
+keytool -list -v -keystore "C:\path\to\upload-keystore.jks" -alias upload
+```
+
 ## Add the Web client ID to the app build
 
 For local testing, the app currently includes a development Web client ID in
